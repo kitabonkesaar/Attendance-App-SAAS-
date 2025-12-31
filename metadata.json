@@ -1,0 +1,8 @@
+{
+  "name": "PhotoAttendance - Workforce Management",
+  "description": "A comprehensive photo-based attendance and workforce management system featuring a mobile-first employee portal and a powerful admin dashboard.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
