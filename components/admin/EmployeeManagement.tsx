@@ -225,6 +225,7 @@ const EmployeeManagement: React.FC = () => {
                 <input
                   value={formData.name || ''}
                   placeholder="Full Legal Name"
+                  autoComplete="name"
                   className="w-full px-5 py-4 rounded-2xl border border-gray-100 bg-gray-50 font-bold focus:ring-4 focus:ring-emerald-500/10 focus:bg-white outline-none"
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                 />
@@ -235,6 +236,7 @@ const EmployeeManagement: React.FC = () => {
                   <input
                     value={formData.email || ''}
                     placeholder="official@company.com"
+                    autoComplete="email"
                     className="w-full px-5 py-4 rounded-2xl border border-gray-100 bg-gray-50 font-bold focus:ring-4 focus:ring-emerald-500/10"
                     onChange={(e) => setFormData({...formData, email: e.target.value})}
                   />
@@ -244,6 +246,7 @@ const EmployeeManagement: React.FC = () => {
                   <input
                     value={formData.mobile || ''}
                     placeholder="10-digit mobile"
+                    autoComplete="tel"
                     className="w-full px-5 py-4 rounded-2xl border border-gray-100 bg-gray-50 font-bold focus:ring-4 focus:ring-emerald-500/10"
                     onChange={(e) => setFormData({...formData, mobile: e.target.value})}
                   />
@@ -256,6 +259,7 @@ const EmployeeManagement: React.FC = () => {
                   <input
                     type="text"
                     value={formData.password || ''}
+                    autoComplete="new-password"
                     className="w-full px-5 py-4 rounded-2xl border border-gray-100 bg-gray-50 font-bold"
                     onChange={(e) => setFormData({...formData, password: e.target.value})}
                   />

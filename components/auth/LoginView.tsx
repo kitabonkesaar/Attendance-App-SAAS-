@@ -134,6 +134,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             <input
               type="email"
               required
+              autoComplete="email"
               className={`w-full px-6 py-5 rounded-[1.8rem] border border-gray-100 bg-gray-50/50 font-bold focus:ring-4 outline-none transition-all ${isEmployee ? 'focus:ring-emerald-500/10' : 'focus:ring-indigo-500/10'}`}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -145,6 +146,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             <input
               type="password"
               required
+              autoComplete="current-password"
               className={`w-full px-6 py-5 rounded-[1.8rem] border border-gray-100 bg-gray-50/50 font-bold focus:ring-4 outline-none transition-all ${isEmployee ? 'focus:ring-emerald-500/10' : 'focus:ring-indigo-500/10'}`}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
