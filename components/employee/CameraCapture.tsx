@@ -14,6 +14,7 @@ interface CameraCaptureProps {
 const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCancel, onSuccess }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -35,10 +36,24 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
       });
       setStream(mediaStream);
       if (videoRef.current) videoRef.current.srcObject = mediaStream;
-    } catch (err) {
-      setError("Camera blocked. Please allow camera access in browser settings.");
+    } catch (err: any) {
+      console.error("Camera access error:", err);
+      setError(`Camera Error: ${err.message || "Access blocked"}.`);
     }
   };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCapturedImage(reader.result as string);
+        setError(null);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
 
   const stopCamera = () => {
     if (stream) stream.getTracks().forEach(track => track.stop());
@@ -198,8 +213,23 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
 
       <footer className="p-8 pb-12 flex flex-col gap-6 bg-gradient-to-t from-black via-black/80 to-transparent">
         {error && (
-          <div className="p-4 bg-rose-500/10 text-rose-300 rounded-2xl text-[9px] font-black text-center border border-rose-500/30 uppercase tracking-widest animate-in slide-in-from-bottom-2">
-            {error}
+          <div className="w-full space-y-3 animate-in slide-in-from-bottom-2">
+            <div className="p-4 bg-rose-500/10 text-rose-300 rounded-2xl text-[9px] font-black text-center border border-rose-500/30 uppercase tracking-widest">
+              {error}
+            </div>
+            <button 
+               onClick={() => fileInputRef.current?.click()}
+               className="w-full py-4 bg-zinc-800 text-white rounded-2xl font-black uppercase tracking-widest text-[9px] hover:bg-zinc-700 border border-white/10 transition-all"
+             >
+               Upload Photo Instead
+             </button>
+             <input 
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileUpload}
+             />
           </div>
         )}
         

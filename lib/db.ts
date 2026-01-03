@@ -184,6 +184,33 @@ export const DB = {
     if (error) throw error;
     return data || [];
   },
+
+  getSettings: async (): Promise<AppSettings> => {
+    const settings = await DB.getAppSettings();
+    if (settings) return settings;
+    return {
+        attendance_window_start: '09:00',
+        attendance_window_end: '10:00',
+        late_threshold_minutes: 15,
+        location_mandatory: true,
+        photo_mandatory: true,
+        device_binding: false
+    };
+  },
+
+  uploadPhoto: async (file: string | Blob, fileName: string): Promise<string> => {
+    const { data, error } = await supabase.storage
+      .from('attendance-photos')
+      .upload(fileName, file as any);
+      
+    if (error) throw error;
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('attendance-photos')
+      .getPublicUrl(data?.path || fileName);
+      
+    return publicUrl;
+  },
   
   updateEmployee: async (employee: Partial<Employee>, adminId: string) => {
     const { error } = await supabase.from('employees').upsert(employee);
