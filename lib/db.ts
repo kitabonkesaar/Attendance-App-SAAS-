@@ -218,6 +218,24 @@ export const DB = {
     return employee;
   },
 
+  deleteEmployee: async (id: string, adminId: string) => {
+    // 1. Delete from public.employees
+    const { error: dbError } = await supabase.from('employees').delete().eq('id', id);
+    if (dbError) throw dbError;
+
+    // 2. Log the deletion
+    await DB.addAuditLog({
+        admin_id: adminId,
+        action: 'DELETE_EMPLOYEE',
+        entity: 'Employee',
+        old_value: id,
+        new_value: 'DELETED'
+    });
+    
+    // Note: Deleting from auth.users requires Service Role key (backend) or Database Trigger.
+    // For this client-side app, we only delete the record from our public table.
+  },
+
   addAuditLog: async (log: Omit<AuditLog, 'id' | 'timestamp'>) => {
     const { error } = await supabase.from('audit_logs').insert(log);
     if (error) throw error;
