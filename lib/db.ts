@@ -29,6 +29,53 @@ import { Employee, Attendance, AppSettings, AuditLog, Announcement, UserRole, At
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
+ * CREATE TABLE IF NOT EXISTS public.attendance (
+ *   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *   employee_id TEXT NOT NULL,
+ *   date TEXT NOT NULL,
+ *   time TEXT NOT NULL,
+ *   photo_url TEXT,
+ *   latitude NUMERIC,
+ *   longitude NUMERIC,
+ *   punch_out_time TEXT,
+ *   punch_out_photo_url TEXT,
+ *   punch_out_latitude NUMERIC,
+ *   punch_out_longitude NUMERIC,
+ *   device_id TEXT,
+ *   status TEXT,
+ *   edited_by TEXT,
+ *   edit_reason TEXT,
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS public.app_settings (
+ *   id INTEGER PRIMARY KEY DEFAULT 1,
+ *   attendance_window_start TEXT,
+ *   attendance_window_end TEXT,
+ *   late_threshold_minutes INTEGER,
+ *   location_mandatory BOOLEAN,
+ *   photo_mandatory BOOLEAN,
+ *   device_binding BOOLEAN
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS public.audit_logs (
+ *   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *   admin_id TEXT,
+ *   action TEXT,
+ *   entity TEXT,
+ *   old_value TEXT,
+ *   new_value TEXT,
+ *   timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS public.announcements (
+ *   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *   title TEXT,
+ *   content TEXT,
+ *   date TEXT,
+ *   type TEXT
+ * );
+ * 
  * -- 2. Trigger Function
  * CREATE OR REPLACE FUNCTION public.handle_new_user() 
  * RETURNS TRIGGER AS $$
@@ -64,11 +111,11 @@ import { Employee, Attendance, AppSettings, AuditLog, Announcement, UserRole, At
  * ON CONFLICT (id) DO NOTHING;
  */
 
-const isMock = !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_URL === 'undefined';
+const isMock = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const DB = {
   seedDemoData: async () => {
-    if (isMock) return "App is in simulation mode.";
+    // In mock mode, we still want to seed data to localStorage
     try {
       await supabase.from('app_settings').upsert({
         id: 1,
@@ -98,124 +145,103 @@ export const DB = {
         .maybeSingle();
       
       if (profileError) {
-        console.error("Profile Fetch Error:", profileError);
+        console.error("Profile fetch error:", profileError);
+        // Fallback if profile missing but auth exists
+        return {
+            id: session.user.id,
+            name: session.user.email?.split('@')[0] || 'User',
+            role: session.user.email?.includes('admin') ? UserRole.ADMIN : UserRole.EMPLOYEE,
+            employee_id: session.user.id
+        };
       }
-      
-      // CRITICAL FALLBACK: If auth session exists but profile doesn't, create it on the fly
-      if (!profile) {
-        console.warn("Profile missing for active session. Attempting auto-creation...");
-        const isEmailAdmin = session.user.email?.toLowerCase().includes('admin');
-        const role = isEmailAdmin ? UserRole.ADMIN : UserRole.EMPLOYEE;
-        const name = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
-        
-        const newProfile = { id: session.user.id, name, role };
-        
-        // Try inserting, but don't crash if it fails (might be RLS)
-        const { error: insertError } = await supabase.from('profiles').insert(newProfile);
-        if (insertError) {
-          console.error("Auto-profile creation failed:", insertError);
-          // Return the expected session anyway so the UI doesn't block the user
-        }
-        
-        return { id: session.user.id, name, role, employee_id: session.user.id };
-      }
-        
+
       return {
         id: session.user.id,
-        name: profile.name,
-        role: (profile.role as UserRole),
+        name: profile?.name || session.user.email?.split('@')[0] || 'User',
+        role: (profile?.role as UserRole) || (session.user.email?.includes('admin') ? UserRole.ADMIN : UserRole.EMPLOYEE),
         employee_id: session.user.id
       };
-    } catch (e) {
-      console.error("Critical Failure in getCurrentSession:", e);
+    } catch (error) {
+      console.error('Session Check Error:', error);
       return null;
     }
   },
 
-  getEmployees: async (): Promise<Employee[]> => {
-    const { data, error } = await supabase.from('employees').select('*').order('name');
-    if (error) console.error("getEmployees error:", error);
-    return data || [];
-  },
-
-  updateEmployee: async (emp: Employee, adminId: string) => {
-    await supabase.from('profiles').upsert({
-      id: emp.id,
-      name: emp.name,
-      role: emp.role.toUpperCase().includes('ADMIN') ? UserRole.ADMIN : UserRole.EMPLOYEE
-    });
-    await supabase.from('employees').upsert(emp);
-  },
-
-  deleteEmployee: async (id: string, adminId: string) => {
-    await supabase.from('employees').delete().eq('id', id);
-    await supabase.from('profiles').delete().eq('id', id);
-  },
-
-  getAttendance: async (date?: string): Promise<Attendance[]> => {
-    let query = supabase.from('attendance').select('*').order('date', { ascending: false });
-    if (date) query = query.eq('date', date);
-    const { data, error } = await query;
-    if (error) console.error("getAttendance error:", error);
-    return data || [];
-  },
-
-  saveAttendance: async (record: Omit<Attendance, 'id' | 'created_at'>): Promise<Attendance> => {
-    const { data, error } = await supabase.from('attendance').insert(record).select().single();
+  getAttendance: async (): Promise<Attendance[]> => {
+    const { data, error } = await supabase.from('attendance').select('*');
     if (error) throw error;
-    return data;
+    return data || [];
+  },
+
+  getEmployees: async (): Promise<Employee[]> => {
+    const { data, error } = await supabase.from('employees').select('*');
+    if (error) throw error;
+    return data || [];
+  },
+
+  getAnnouncements: async (): Promise<Announcement[]> => {
+    const { data, error } = await supabase.from('announcements').select('*');
+    if (error) throw error;
+    return data || [];
+  },
+  
+  updateEmployee: async (employee: Partial<Employee>, adminId: string) => {
+    const { error } = await supabase.from('employees').upsert(employee);
+    if (error) throw error;
+    return employee;
+  },
+
+  addAuditLog: async (log: Omit<AuditLog, 'id' | 'timestamp'>) => {
+    const { error } = await supabase.from('audit_logs').insert(log);
+    if (error) throw error;
   },
 
   updateAttendance: async (id: string, updates: Partial<Attendance>, adminId: string) => {
     const { error } = await supabase.from('attendance').update(updates).eq('id', id);
+    if (error) throw error;
+    
+    // Log the update
+    await DB.addAuditLog({
+        admin_id: adminId,
+        action: 'UPDATE_ATTENDANCE',
+        entity: 'Attendance',
+        old_value: id,
+        new_value: JSON.stringify(updates)
+    });
+  },
+
+  saveAttendance: async (record: Omit<Attendance, 'id' | 'created_at'>) => {
+    const { error } = await supabase.from('attendance').insert(record);
     if (error) throw error;
   },
 
   deleteAttendance: async (id: string, adminId: string) => {
     const { error } = await supabase.from('attendance').delete().eq('id', id);
     if (error) throw error;
+     await DB.addAuditLog({
+        admin_id: adminId,
+        action: 'DELETE_ATTENDANCE',
+        entity: 'Attendance',
+        old_value: id,
+        new_value: 'DELETED'
+    });
   },
 
-  getAnnouncements: async (): Promise<Announcement[]> => {
-    const { data } = await supabase.from('announcements').select('*').order('date', { ascending: false });
-    return data || [];
+  getAppSettings: async (): Promise<AppSettings | null> => {
+      const { data, error } = await supabase.from('app_settings').select('*').single();
+      if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "Row not found"
+      return data || null;
   },
 
-  getSettings: async (): Promise<AppSettings> => {
-    const { data } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle();
-    return data || {
-      attendance_window_start: '09:00',
-      attendance_window_end: '10:00',
-      late_threshold_minutes: 15,
-      location_mandatory: true,
-      photo_mandatory: true,
-      device_binding: false
-    };
-  },
-
-  saveSettings: async (settings: AppSettings, adminId: string) => {
-    await supabase.from('app_settings').upsert({ id: 1, ...settings });
-  },
-
-  addAuditLog: async (log: Omit<AuditLog, 'id' | 'timestamp'>) => {
-    await supabase.from('audit_logs').insert(log);
-  },
-
-  uploadPhoto: async (base64: string, path: string): Promise<string> => {
-    if (isMock) return "https://via.placeholder.com/400x500?text=Mock_Photo";
-    try {
-      const byteString = atob(base64.split(',')[1]);
-      const ab = new ArrayBuffer(byteString.length);
-      const ia = new Uint8Array(ab);
-      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-      const blob = new Blob([ab], { type: 'image/jpeg' });
-      const { error } = await supabase.storage.from('attendance_photos').upload(path, blob);
+  updateAppSettings: async (settings: AppSettings, adminId: string) => {
+      const { error } = await supabase.from('app_settings').upsert({ id: 1, ...settings });
       if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from('attendance_photos').getPublicUrl(path);
-      return publicUrl;
-    } catch (e) {
-      console.error("Upload error:", e);
-      return base64;
-    }
+      await DB.addAuditLog({
+        admin_id: adminId,
+        action: 'UPDATE_SETTINGS',
+        entity: 'AppSettings',
+        old_value: 'N/A',
+        new_value: 'Updated Settings'
+    });
   }
 };

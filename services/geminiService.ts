@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey) return null;
   return new GoogleGenAI({ apiKey });
 };
@@ -14,7 +14,7 @@ export const analyzeAttendancePhoto = async (base64Image: string) => {
   try {
     // Fix: Ensure contents follows the correct structure for text and image parts as per guidelines
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash-exp', // Updated model
       contents: {
         parts: [
           { text: "Identity Check: Verify if this image is a clear selfie of a person's face for attendance. Ensure no masks (unless medical), high clarity, and centered. Return raw JSON strictly." },
@@ -56,7 +56,7 @@ export const getWorkforceInsights = async (attendanceData: any[]) => {
 
     // Fix: Ensure contents is properly passed as a string for text-only queries
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-2.0-flash-exp', // Updated model
       contents: `HR Summary Task: Based on ${JSON.stringify(summary)}, provide a succinct 2-sentence performance insight for the CEO dashboard.`,
     });
 

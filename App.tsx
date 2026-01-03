@@ -12,20 +12,54 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     const checkSession = async () => {
-      const activeSession = await DB.getCurrentSession();
-      setSession(activeSession);
-      setIsLoading(false);
+      try {
+        const activeSession = await DB.getCurrentSession();
+        if (isMounted) {
+          setSession(activeSession);
+        }
+      } catch (error) {
+        console.error('Session check failed:', error);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
     };
 
     checkSession();
 
+    // Safety timeout to prevent infinite loading (max 3 seconds)
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        setIsLoading((prev) => {
+          if (prev) console.warn("Session check timed out. Forcing UI load.");
+          return false;
+        });
+      }
+    }, 3000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, _session) => {
+      if (!isMounted) return;
+      // We rely on checkSession for initial load. 
+      // This listener handles subsequent updates (login/logout/token refresh).
+      // To avoid race conditions on mount, we only process if not already loading or if checkSession finished.
+      // But simplest is to just fetch.
       const activeSession = await DB.getCurrentSession();
-      setSession(activeSession);
+      if (isMounted) {
+        setSession(activeSession);
+        // Ensure loading is cleared if auth state changes (e.g. fast login)
+        setIsLoading(false);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleLogout = async () => {

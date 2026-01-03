@@ -41,7 +41,7 @@ const AdminOverview: React.FC = () => {
     fetchData();
 
     // Check if we are using the real Supabase client or the mock
-    const isMock = !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY;
+    const isMock = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
     if (isMock) {
       setConnectionStatus('MOCK');
       return;

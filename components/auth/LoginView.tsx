@@ -22,12 +22,20 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     setIsSubmitting(true);
     setError(null);
 
+    // Safety timeout to prevent infinite hanging
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Request timed out. Please check your internet connection or Supabase URL.")), 10000)
+    );
+
     try {
       // 1. Authenticate with Supabase Auth
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
+      const loginPromise = supabase.auth.signInWithPassword({
         email,
         password,
       });
+
+      const result: any = await Promise.race([loginPromise, timeoutPromise]);
+      const { data, error: authError } = result;
 
       if (authError) {
         throw new Error(authError.message === 'Invalid login credentials' 
@@ -37,14 +45,17 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
       if (data.user) {
         // 2. Fetch or Sync User Profile
-        const session = await DB.getCurrentSession();
-        if (session) {
-          onLogin(session);
+        const sessionPromise = DB.getCurrentSession();
+        const sessionResult: any = await Promise.race([sessionPromise, timeoutPromise]);
+        
+        if (sessionResult) {
+          onLogin(sessionResult);
         } else {
           setError("Auth successful but session failed to load. Ensure you've run the SQL schema in lib/db.ts.");
         }
       }
     } catch (err: any) {
+      console.error("Login Error:", err);
       setError(err.message || "An unexpected login error occurred.");
     } finally {
       setIsSubmitting(false);
@@ -170,7 +181,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
               <p>If you've created users in Supabase Auth but can't log in:</p>
               <ol className="list-decimal pl-5 space-y-3">
                 <li>Copy the SQL in <code className="bg-gray-100 px-1">lib/db.ts</code>.</li>
-                <li>Go to your **Supabase Dashboard > SQL Editor**.</li>
+                <li>Go to your **Supabase Dashboard &gt; SQL Editor**.</li>
                 <li>Paste and **Run** the script. This creates the profiles and RLS policies.</li>
                 <li>Run the **BACKFILL SCRIPT** (at the bottom of the code) to sync existing users.</li>
               </ol>
