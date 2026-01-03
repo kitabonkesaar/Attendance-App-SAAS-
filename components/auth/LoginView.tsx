@@ -14,8 +14,11 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [showSeedGuide, setShowSeedGuide] = useState(false);
+
+  // Helper to check if input is a mobile number
+  const isMobileNumber = (input: string) => {
+    return /^\d{10}$/.test(input.replace(/[^0-9]/g, ''));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,9 +31,25 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     );
 
     try {
-      // 1. Authenticate with Supabase Auth
+      let loginEmail = email;
+
+      // 1. If input is mobile, lookup email
+      if (isMobileNumber(email)) {
+        const { data: employees, error: fetchError } = await supabase
+          .from('employees')
+          .select('email')
+          .eq('mobile', email)
+          .single();
+
+        if (fetchError || !employees) {
+           throw new Error("Mobile number not found. Please contact admin.");
+        }
+        loginEmail = employees.email;
+      }
+
+      // 2. Authenticate with Supabase Auth
       const loginPromise = supabase.auth.signInWithPassword({
-        email,
+        email: loginEmail,
         password,
       });
 
@@ -39,7 +58,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
       if (authError) {
         throw new Error(authError.message === 'Invalid login credentials' 
-          ? "Login failed: Check your email and password in Supabase > Auth > Users." 
+          ? "Login failed: Check your credentials." 
           : authError.message);
       }
 
@@ -130,14 +149,15 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 ml-2">Email Address</label>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 ml-2">Email or Mobile</label>
             <input
-              type="email"
+              type="text"
               required
-              autoComplete="email"
+              autoComplete="username"
               className={`w-full px-6 py-5 rounded-[1.8rem] border border-gray-100 bg-gray-50/50 font-bold focus:ring-4 outline-none transition-all ${isEmployee ? 'focus:ring-emerald-500/10' : 'focus:ring-indigo-500/10'}`}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@company.com or 9876543210"
             />
           </div>
 
