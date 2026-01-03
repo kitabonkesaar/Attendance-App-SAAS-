@@ -19,41 +19,28 @@ export interface Employee {
   name: string;
   mobile: string;
   email: string;
-  password?: string; // For login
+  password?: string;
   role: string;
   department: string;
   joining_date: string;
   status: 'ACTIVE' | 'INACTIVE';
-  shift_start: string; // HH:mm
-  shift_end: string;   // HH:mm
+  shift_start: string;
+  shift_end: string;
   created_at: string;
-}
-
-export interface Admin {
-  id: string;
-  name: string;
-  email: string;
-  password: string;
-  role: UserRole;
 }
 
 export interface Attendance {
   id: string;
   employee_id: string;
-  date: string; // YYYY-MM-DD
-  
-  // Punch In Data
-  time: string; // HH:mm:ss (Punch In Time)
+  date: string;
+  time: string;
   photo_url: string;
   latitude: number | null;
   longitude: number | null;
-  
-  // Punch Out Data
   punch_out_time?: string;
   punch_out_photo_url?: string;
   punch_out_latitude?: number | null;
   punch_out_longitude?: number | null;
-
   device_id: string;
   status: AttendanceStatus;
   edited_by?: string;

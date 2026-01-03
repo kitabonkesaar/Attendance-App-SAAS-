@@ -1,29 +1,35 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserSession, UserRole } from './types';
+import { DB } from './lib/db';
 import EmployeeDashboard from './components/employee/EmployeeDashboard';
 import AdminDashboardView from './components/admin/AdminDashboardView';
 import LoginView from './components/auth/LoginView';
+import { supabase } from './lib/supabaseClient';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<UserSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const storedSession = localStorage.getItem('pa_session');
-    if (storedSession) {
-      setSession(JSON.parse(storedSession));
-    }
-    setIsLoading(false);
+    const checkSession = async () => {
+      const activeSession = await DB.getCurrentSession();
+      setSession(activeSession);
+      setIsLoading(false);
+    };
+
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, _session) => {
+      const activeSession = await DB.getCurrentSession();
+      setSession(activeSession);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogin = (user: UserSession) => {
-    localStorage.setItem('pa_session', JSON.stringify(user));
-    setSession(user);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('pa_session');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setSession(null);
   };
 
@@ -36,7 +42,7 @@ const App: React.FC = () => {
   }
 
   if (!session) {
-    return <LoginView onLogin={handleLogin} />;
+    return <LoginView onLogin={(user) => setSession(user)} />;
   }
 
   return (

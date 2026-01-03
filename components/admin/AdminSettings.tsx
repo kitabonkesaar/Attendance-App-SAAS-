@@ -4,14 +4,33 @@ import { AppSettings } from '../../types';
 import { DB } from '../../lib/db';
 
 const AdminSettings: React.FC = () => {
-  const [settings, setSettings] = useState<AppSettings>(DB.getSettings());
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
-  const handleSave = () => {
-    DB.saveSettings(settings, 'admin1');
+  useEffect(() => {
+    const fetchSettings = async () => {
+      // Fix: Await async database call to get configuration
+      const data = await DB.getSettings();
+      setSettings(data);
+    };
+    fetchSettings();
+  }, []);
+
+  const handleSave = async () => {
+    if (!settings) return;
+    // Fix: Await async saveSettings database operation
+    await DB.saveSettings(settings, 'admin1');
     setSaveStatus("Global configuration updated!");
     setTimeout(() => setSaveStatus(null), 3000);
   };
+
+  if (!settings) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl space-y-6 lg:space-y-8 pb-10">

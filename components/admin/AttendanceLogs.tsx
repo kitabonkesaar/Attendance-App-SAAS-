@@ -24,9 +24,12 @@ const AttendanceLogs: React.FC = () => {
     refreshData();
   }, []);
 
-  const refreshData = () => {
-    setLogs(DB.getAttendance().sort((a, b) => b.created_at.localeCompare(a.created_at)));
-    setEmployees(DB.getEmployees());
+  const refreshData = async () => {
+    // Fix: Await async database calls to get attendance and employees list
+    const attendanceData = await DB.getAttendance();
+    setLogs(attendanceData.sort((a, b) => b.created_at.localeCompare(a.created_at)));
+    const employeesData = await DB.getEmployees();
+    setEmployees(employeesData);
   };
 
   const getEmpName = (id: string) => employees.find(e => e.id === id)?.name || 'Unknown';
@@ -42,24 +45,29 @@ const AttendanceLogs: React.FC = () => {
     setIsAddingManual(true);
   };
 
-  const handleSaveCorrection = () => {
+  const handleSaveCorrection = async () => {
     if (!editingRecord || !correctionReason.trim()) {
       alert("A reason for correction is mandatory.");
       return;
     }
-    DB.updateAttendance(editingRecord, 'admin1', correctionReason);
+    // Fix: Pass correct object properties and wait for updateAttendance promise to resolve
+    await DB.updateAttendance(editingRecord.id, { 
+      time: editingRecord.time,
+      status: editingRecord.status,
+      edit_reason: correctionReason,
+      edited_by: 'admin1'
+    }, 'admin1');
     setEditingRecord(null);
     setCorrectionReason("");
-    refreshData();
+    await refreshData();
   };
 
-  const handleSaveManual = () => {
+  const handleSaveManual = async () => {
     if (!manualEntry.employee_id || !manualEntry.time || !correctionReason.trim()) {
       alert("Employee, Check-in Time, and Reason are mandatory.");
       return;
     }
-    const newRecord: Attendance = {
-      id: Math.random().toString(36).substr(2, 9),
+    const newRecord: Omit<Attendance, 'id' | 'created_at'> = {
       employee_id: manualEntry.employee_id!,
       date: manualEntry.date!,
       time: manualEntry.time!.length === 5 ? manualEntry.time + ':00' : manualEntry.time!,
@@ -70,19 +78,20 @@ const AttendanceLogs: React.FC = () => {
       device_id: 'ADMIN_DESKTOP',
       status: manualEntry.status as AttendanceStatus,
       edit_reason: correctionReason,
-      edited_by: 'admin1',
-      created_at: new Date().toISOString()
+      edited_by: 'admin1'
     };
-    DB.addManualAttendance(newRecord, 'admin1');
+    // Fix: Use the standard saveAttendance method instead of non-existent addManualAttendance
+    await DB.saveAttendance(newRecord);
     setIsAddingManual(false);
     setCorrectionReason("");
-    refreshData();
+    await refreshData();
   };
 
-  const handleDeleteRecord = (id: string) => {
+  const handleDeleteRecord = async (id: string) => {
     if (confirm("Permanently delete this attendance record?")) {
-      DB.deleteAttendance(id, 'admin1');
-      refreshData();
+      // Fix: Use deleteAttendance instead of the non-existent deleteAttendance (aliased from deleteEmployee) and await it
+      await DB.deleteAttendance(id, 'admin1');
+      await refreshData();
     }
   };
 

@@ -1,177 +1,259 @@
 
-import { Employee, Attendance, AppSettings, AuditLog, AttendanceStatus, Announcement, Admin, UserRole } from '../types';
+import { supabase } from './supabaseClient';
+import { Employee, Attendance, AppSettings, AuditLog, Announcement, UserRole, AttendanceStatus, UserSession } from '../types';
 
-const STORAGE_KEYS = {
-  EMPLOYEES: 'pa_employees',
-  ATTENDANCE: 'pa_attendance',
-  SETTINGS: 'pa_settings',
-  AUDIT_LOGS: 'pa_audit_logs',
-  ANNOUNCEMENTS: 'pa_announcements',
-  ADMINS: 'pa_admins'
-};
+/**
+ * -------------------------------------------------------------------
+ * SUPABASE SQL SCHEMA (Copy and Run in SQL Editor)
+ * -------------------------------------------------------------------
+ * 
+ * -- 1. PROFILES (Extends Auth User)
+ * CREATE TABLE profiles (
+ *   id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+ *   name TEXT NOT NULL,
+ *   role TEXT CHECK (role IN ('ADMIN', 'EMPLOYEE')) DEFAULT 'EMPLOYEE',
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 2. EMPLOYEES (Staff Details)
+ * CREATE TABLE employees (
+ *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ *   profile_id UUID REFERENCES auth.users(id),
+ *   employee_code TEXT UNIQUE NOT NULL,
+ *   name TEXT NOT NULL,
+ *   mobile TEXT NOT NULL,
+ *   email TEXT UNIQUE NOT NULL,
+ *   department TEXT,
+ *   role TEXT DEFAULT 'Staff',
+ *   joining_date DATE DEFAULT CURRENT_DATE,
+ *   status TEXT CHECK (status IN ('ACTIVE', 'INACTIVE')) DEFAULT 'ACTIVE',
+ *   shift_start TIME DEFAULT '09:00',
+ *   shift_end TIME DEFAULT '18:00',
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 3. ATTENDANCE (Punch Logs)
+ * CREATE TABLE attendance (
+ *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ *   employee_id UUID REFERENCES auth.users(id) NOT NULL,
+ *   date DATE NOT NULL DEFAULT CURRENT_DATE,
+ *   time TIME NOT NULL DEFAULT CURRENT_TIME,
+ *   photo_url TEXT,
+ *   latitude FLOAT,
+ *   longitude FLOAT,
+ *   punch_out_time TIME,
+ *   punch_out_photo_url TEXT,
+ *   punch_out_latitude FLOAT,
+ *   punch_out_longitude FLOAT,
+ *   device_id TEXT,
+ *   status TEXT CHECK (status IN ('PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'PENDING')),
+ *   edited_by TEXT,
+ *   edit_reason TEXT,
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 4. SETTINGS
+ * CREATE TABLE app_settings (
+ *   id INTEGER PRIMARY KEY DEFAULT 1,
+ *   attendance_window_start TIME DEFAULT '09:00',
+ *   attendance_window_end TIME DEFAULT '10:00',
+ *   late_threshold_minutes INTEGER DEFAULT 15,
+ *   location_mandatory BOOLEAN DEFAULT TRUE,
+ *   photo_mandatory BOOLEAN DEFAULT TRUE,
+ *   device_binding BOOLEAN DEFAULT FALSE
+ * );
+ * 
+ * -- 5. QUICK START DATA (FOR DEMO)
+ * -- Run these to setup your demo accounts in the public tables
+ * -- Note: You must still create the users in Auth > Users tab manually with these IDs or use the app Sign Up.
+ * 
+ * -- Optional: SQL to insert demo profile data directly
+ * -- INSERT INTO profiles (id, name, role) VALUES ('<UUID_FROM_AUTH>', 'Demo Admin', 'ADMIN');
+ * -- INSERT INTO profiles (id, name, role) VALUES ('<UUID_FROM_AUTH>', 'Demo Staff', 'EMPLOYEE');
+ */
 
-const DEFAULT_SETTINGS: AppSettings = {
-  attendance_window_start: '09:00',
-  attendance_window_end: '10:00',
-  late_threshold_minutes: 15,
-  location_mandatory: true,
-  photo_mandatory: true,
-  device_binding: true
-};
-
-const INITIAL_ADMINS: Admin[] = [
-  {
-    id: 'admin1',
-    name: 'System Administrator',
-    email: 'admin@photoattendance.com',
-    password: 'Admin@123',
-    role: UserRole.ADMIN
-  }
-];
-
-const INITIAL_ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: 'ann1',
-    title: 'Welcome to PhotoAttendance',
-    content: 'Please ensure you mark your attendance daily before 10 AM to avoid late status.',
-    date: new Date().toISOString(),
-    type: 'INFO'
-  }
-];
+const isMock = !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_URL === 'undefined';
 
 export const DB = {
-  getAdmins: (): Admin[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.ADMINS);
-    if (!data) {
-      localStorage.setItem(STORAGE_KEYS.ADMINS, JSON.stringify(INITIAL_ADMINS));
-      return INITIAL_ADMINS;
+  // Utility to seed demo data (Real Supabase Mode)
+  seedDemoData: async () => {
+    if (isMock) return "App is in simulation mode. No Supabase connection detected.";
+    
+    try {
+      // 1. Create Default Settings
+      await supabase.from('app_settings').upsert({
+        id: 1,
+        attendance_window_start: '09:00',
+        attendance_window_end: '10:00',
+        late_threshold_minutes: 15,
+        location_mandatory: true,
+        photo_mandatory: true,
+        device_binding: false
+      });
+
+      // 2. Clear previous audit logs if any (Optional)
+      console.log("Schema initialized.");
+      return "SUCCESS: Database tables are ready. \n\nIMPORTANT: Go to your Supabase Dashboard > Authentication > Users and create:\n1. admin@demo.com (Password: Admin@123)\n2. staff@demo.com (Password: Staff@123)";
+    } catch (e: any) {
+      throw new Error(`Seeding Failed: ${e.message}`);
     }
-    return JSON.parse(data);
   },
-  getEmployees: (): Employee[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
-    return data ? JSON.parse(data) : [];
-  },
-  saveEmployees: (employees: Employee[]) => {
-    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
-  },
-  updateEmployee: (emp: Employee, adminId: string) => {
-    const employees = DB.getEmployees();
-    const oldEmp = employees.find(e => e.id === emp.id);
-    const updated = employees.map(e => e.id === emp.id ? emp : e);
-    DB.saveEmployees(updated);
-    DB.addAuditLog({
-      admin_id: adminId,
-      action: 'UPDATE_EMPLOYEE',
-      entity: `Employee (${emp.employee_code})`,
-      old_value: JSON.stringify(oldEmp),
-      new_value: JSON.stringify(emp)
-    });
-  },
-  deleteEmployee: (id: string, adminId: string) => {
-    const employees = DB.getEmployees();
-    const target = employees.find(e => e.id === id);
-    const filtered = employees.filter(e => e.id !== id);
-    DB.saveEmployees(filtered);
-    DB.addAuditLog({
-      admin_id: adminId,
-      action: 'DELETE_EMPLOYEE',
-      entity: `Employee Profile`,
-      old_value: JSON.stringify(target),
-      new_value: 'DELETED_PERMANENTLY'
-    });
-  },
-  getAttendance: (): Attendance[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
-    return data ? JSON.parse(data) : [];
-  },
-  saveAttendance: (attendance: Attendance[]) => {
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(attendance));
-  },
-  updateAttendance: (record: Attendance, adminId: string, reason: string) => {
-    const all = DB.getAttendance();
-    const oldRecord = all.find(a => a.id === record.id);
-    const updated = all.map(a => a.id === record.id ? { ...record, edited_by: adminId, edit_reason: reason } : a);
-    DB.saveAttendance(updated);
-    DB.addAuditLog({
-      admin_id: adminId,
-      action: 'ATTENDANCE_CORRECTION',
-      entity: `Log ID: ${record.id}`,
-      old_value: JSON.stringify(oldRecord),
-      new_value: JSON.stringify({ ...record, edit_reason: reason })
-    });
-  },
-  addManualAttendance: (record: Attendance, adminId: string) => {
-    const all = DB.getAttendance();
-    DB.saveAttendance([...all, record]);
-    DB.addAuditLog({
-      admin_id: adminId,
-      action: 'MANUAL_ENTRY_CREATION',
-      entity: `Attendance Record`,
-      old_value: 'N/A',
-      new_value: JSON.stringify(record)
-    });
-  },
-  deleteAttendance: (id: string, adminId: string) => {
-    const all = DB.getAttendance();
-    const target = all.find(a => a.id === id);
-    const filtered = all.filter(a => a.id !== id);
-    DB.saveAttendance(filtered);
-    DB.addAuditLog({
-      admin_id: adminId,
-      action: 'DELETE_ATTENDANCE_RECORD',
-      entity: `Log ID: ${id}`,
-      old_value: JSON.stringify(target),
-      new_value: 'REMOVED'
-    });
-  },
-  getSettings: (): AppSettings => {
-    const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    if (!data) {
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
-      return DEFAULT_SETTINGS;
+
+  // Authentication & Session
+  // Fix: UserSession type must be imported from types.ts
+  getCurrentSession: async (): Promise<UserSession | null> => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const session = data?.session;
+      if (!session) return null;
+      
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+      
+      // Auto-create profile if missing (useful for first-time login)
+      if (!profile && !error) {
+        const role = session.user.email?.includes('admin') ? UserRole.ADMIN : UserRole.EMPLOYEE;
+        const newProfile = { id: session.user.id, name: session.user.user_metadata.name || session.user.email?.split('@')[0], role };
+        await supabase.from('profiles').insert(newProfile);
+        return { ...newProfile, role: role as UserRole, employee_id: session.user.id };
+      }
+        
+      return {
+        id: session.user.id,
+        name: profile?.name || session.user.email || 'User',
+        role: (profile?.role as UserRole) || UserRole.EMPLOYEE,
+        employee_id: session.user.id
+      };
+    } catch (e) {
+      return null;
     }
-    return JSON.parse(data);
   },
-  saveSettings: (settings: AppSettings, adminId: string) => {
-    const old = DB.getSettings();
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-    DB.addAuditLog({
-      admin_id: adminId,
-      action: 'UPDATE_SYSTEM_SETTINGS',
-      entity: 'Global Config',
-      old_value: JSON.stringify(old),
-      new_value: JSON.stringify(settings)
+
+  // Employees
+  getEmployees: async (): Promise<Employee[]> => {
+    try {
+      const { data, error } = await supabase.from('employees').select('*').order('name');
+      if (error || !data) throw new Error(error?.message || "No data");
+      return data;
+    } catch (e) {
+      return [];
+    }
+  },
+
+  updateEmployee: async (emp: Employee, adminId: string) => {
+    // 1. Update Profile first to ensure role consistency
+    await supabase.from('profiles').upsert({
+      id: emp.id,
+      name: emp.name,
+      role: emp.role === 'Admin' ? UserRole.ADMIN : UserRole.EMPLOYEE
+    });
+
+    // 2. Update Employee details
+    const { profile_id, ...rest } = emp as any;
+    await supabase.from('employees').upsert({
+      ...rest,
+      profile_id: emp.id
     });
   },
-  getAnnouncements: (): Announcement[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.ANNOUNCEMENTS);
-    if (!data) {
-      localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENTS, JSON.stringify(INITIAL_ANNOUNCEMENTS));
-      return INITIAL_ANNOUNCEMENTS;
+
+  deleteEmployee: async (id: string, adminId: string) => {
+    await supabase.from('employees').delete().eq('id', id);
+    await supabase.from('profiles').delete().eq('id', id);
+  },
+
+  // Attendance
+  getAttendance: async (date?: string): Promise<Attendance[]> => {
+    try {
+      let query = supabase.from('attendance').select('*').order('created_at', { ascending: false });
+      if (date) query = query.eq('date', date);
+      const { data, error } = await query;
+      if (error || !data) throw new Error(error?.message || "No data");
+      return data;
+    } catch (e) {
+      return [];
     }
-    return JSON.parse(data);
   },
-  getAuditLogs: (): AuditLog[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
-    return data ? JSON.parse(data) : [];
+
+  saveAttendance: async (record: Omit<Attendance, 'id' | 'created_at'>): Promise<Attendance> => {
+    try {
+      const { data, error } = await supabase.from('attendance').insert(record).select().single();
+      if (error || !data) throw new Error(error?.message || "Failed to save");
+      return data;
+    } catch (e) {
+      throw e;
+    }
   },
-  addAuditLog: (log: Omit<AuditLog, 'id' | 'timestamp'>) => {
-    const logs = DB.getAuditLogs();
-    const newLog: AuditLog = {
-      ...log,
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString()
-    };
-    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify([newLog, ...logs.slice(0, 99)])); // Keep last 100
+
+  updateAttendance: async (id: string, updates: Partial<Attendance>, adminId: string) => {
+    await supabase.from('attendance').update(updates).eq('id', id);
   },
-  verifyCredentials: (emailOrMobile: string, pass: string, role: UserRole) => {
-    if (role === UserRole.ADMIN) {
-      const admins = DB.getAdmins();
-      return admins.find(a => a.email === emailOrMobile && a.password === pass);
-    } else {
-      const emps = DB.getEmployees();
-      return emps.find(e => (e.email === emailOrMobile || e.mobile === emailOrMobile) && e.password === pass);
+
+  deleteAttendance: async (id: string, adminId: string) => {
+    await supabase.from('attendance').delete().eq('id', id);
+  },
+
+  // Storage Helper
+  uploadPhoto: async (base64: string, path: string) => {
+    try {
+      if (isMock || !base64.startsWith('data:')) return base64;
+      
+      const parts = base64.split(',');
+      const byteCharacters = atob(parts[1]);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/jpeg' });
+
+      const { data, error } = await supabase.storage
+        .from('attendance-photos')
+        .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (error || !data) throw new Error(error?.message || "Upload failed");
+      
+      const { data: publicData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path);
+      return publicData?.publicUrl || base64;
+    } catch (e) {
+      return base64;
+    }
+  },
+
+  // System Settings
+  getSettings: async (): Promise<AppSettings> => {
+    try {
+      const { data, error } = await supabase.from('app_settings').select('*').single();
+      if (error || !data) throw new Error(error?.message || "No data");
+      return data;
+    } catch (e) {
+      return {
+        attendance_window_start: '09:00',
+        attendance_window_end: '10:00',
+        late_threshold_minutes: 15,
+        location_mandatory: true,
+        photo_mandatory: true,
+        device_binding: false
+      };
+    }
+  },
+
+  saveSettings: async (settings: AppSettings, adminId: string) => {
+    await supabase.from('app_settings').upsert({ id: 1, ...settings });
+  },
+
+  addAuditLog: async (log: Omit<AuditLog, 'id' | 'timestamp'>) => {
+    await supabase.from('audit_logs').insert(log);
+  },
+
+  getAnnouncements: async (): Promise<Announcement[]> => {
+    try {
+      const { data } = await supabase.from('announcements').select('*').order('date', { ascending: false });
+      return data || [];
+    } catch (e) {
+      return [];
     }
   }
 };

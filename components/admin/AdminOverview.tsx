@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { DB } from '../../lib/db';
+import { supabase } from '../../lib/supabaseClient';
 import { AttendanceStatus } from '../../types';
 import { getWorkforceInsights } from '../../services/geminiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -13,14 +14,14 @@ const AdminOverview: React.FC = () => {
     absent: 0
   });
   const [insights, setInsights] = useState("Analyzing today's data...");
+  const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'MOCK'>('DISCONNECTED');
 
-  useEffect(() => {
-    const employees = DB.getEmployees();
-    const attendance = DB.getAttendance();
+  const fetchData = async () => {
+    const employees = await DB.getEmployees();
+    const attendance = await DB.getAttendance();
     const today = new Date().toISOString().split('T')[0];
     
     const todayRecs = attendance.filter(a => a.date === today);
-    
     const present = todayRecs.filter(a => a.status === AttendanceStatus.PRESENT).length;
     const late = todayRecs.filter(a => a.status === AttendanceStatus.LATE).length;
     const totalEmployees = employees.length;
@@ -32,8 +33,42 @@ const AdminOverview: React.FC = () => {
       absent: totalEmployees - (present + late)
     });
 
-    // Get AI insights
-    getWorkforceInsights(todayRecs).then(setInsights);
+    const workforceInsights = await getWorkforceInsights(todayRecs);
+    setInsights(workforceInsights);
+  };
+
+  useEffect(() => {
+    fetchData();
+
+    // Check if we are using the real Supabase client or the mock
+    const isMock = !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY;
+    if (isMock) {
+      setConnectionStatus('MOCK');
+      return;
+    }
+
+    // Set up Real-time listener
+    const channel = supabase
+      .channel('attendance_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', table: 'attendance', schema: 'public' },
+        (payload) => {
+          console.log('Real-time update received:', payload);
+          fetchData(); // Re-sync data when any change happens
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus('CONNECTED');
+        } else {
+          setConnectionStatus('DISCONNECTED');
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const chartData = [
@@ -44,6 +79,23 @@ const AdminOverview: React.FC = () => {
 
   return (
     <div className="space-y-6 lg:space-y-8">
+      {/* Real-time Status Header */}
+      <div className="flex items-center justify-between px-2">
+        <div>
+          <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">System Health</h4>
+          <div className="flex items-center gap-2 mt-1">
+            <div className={`w-2 h-2 rounded-full animate-pulse ${
+              connectionStatus === 'CONNECTED' ? 'bg-emerald-500' : 
+              connectionStatus === 'MOCK' ? 'bg-amber-500' : 'bg-rose-500'
+            }`}></div>
+            <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">
+              {connectionStatus === 'CONNECTED' ? 'Live Real-time Sync Active' : 
+               connectionStatus === 'MOCK' ? 'Mock Mode (Local Only)' : 'Connection Interrupted'}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         {[

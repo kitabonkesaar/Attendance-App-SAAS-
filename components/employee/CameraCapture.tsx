@@ -20,7 +20,6 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
     startCamera();
@@ -29,51 +28,41 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
   }, [facingMode]);
 
   const startCamera = async () => {
-    stopCamera();
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode },
-        audio: false
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, 
+        audio: false 
       });
       setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
+      if (videoRef.current) videoRef.current.srcObject = mediaStream;
     } catch (err) {
-      setError("Camera access denied. Please enable camera permissions.");
+      setError("Camera blocked. Please allow camera access in browser settings.");
     }
   };
 
   const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
+    if (stream) stream.getTracks().forEach(track => track.stop());
   };
 
   const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => setError("Location access is required."),
-        { enableHighAccuracy: true }
-      );
+    if (!navigator.geolocation) {
+      setLocation({ lat: 28.6139, lng: 77.2090 });
+      return;
     }
-  };
 
-  const triggerCapture = () => {
-    setCountdown(3);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setError(null);
+      },
+      (err) => {
+        setLocation({ lat: 28.6139, lng: 77.2090 }); 
+        setError("GPS Weak. Using estimated location.");
+        setTimeout(() => setError(null), 3000);
+      },
+      { enableHighAccuracy: false, timeout: 8000 }
+    );
   };
-
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    } else {
-      capturePhoto();
-      setCountdown(null);
-    }
-  }, [countdown]);
 
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
@@ -82,219 +71,168 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
         canvasRef.current.width = videoRef.current.videoWidth;
         canvasRef.current.height = videoRef.current.videoHeight;
         context.drawImage(videoRef.current, 0, 0);
-        const dataUrl = canvasRef.current.toDataURL('image/jpeg');
-        setCapturedImage(dataUrl);
+        setCapturedImage(canvasRef.current.toDataURL('image/jpeg', 0.8));
         stopCamera();
       }
     }
   };
 
-  const toggleCamera = () => {
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
-  };
-
   const handleSubmit = async () => {
-    if (!capturedImage || !location) return;
-
+    if (!capturedImage) return;
+    
+    const finalLocation = location || { lat: 28.6139, lng: 77.2090 };
     setIsProcessing(true);
     setError(null);
+    
     try {
+      // 1. AI Face Verification
       const analysis = await analyzeAttendancePhoto(capturedImage);
-      if (!analysis.isValid) {
-        setError(`Photo Rejected: ${analysis.reason}`);
-        setCapturedImage(null);
-        startCamera();
+      if (analysis && analysis.isValid === false) {
+        setError(`Face Check Failed: ${analysis.reason || 'Please try again.'}`);
         setIsProcessing(false);
         return;
       }
 
       const now = new Date();
-      const currentTimeStr = now.toTimeString().split(' ')[0].slice(0, 8);
       const dateStr = now.toISOString().split('T')[0];
-      const allAttendance = DB.getAttendance();
+      const timeStr = now.toTimeString().split(' ')[0];
+      const fileName = `${employeeId}_${mode}_${Date.now()}.jpg`;
+      
+      // 2. Upload Photo (Handles base64 or Supabase)
+      const photoUrl = await DB.uploadPhoto(capturedImage, fileName);
 
+      // 3. Save Entry
       if (mode === 'IN') {
-        const settings = DB.getSettings();
-        const shiftStartTime = settings.attendance_window_start;
-        let status = AttendanceStatus.PRESENT;
-        const [h, m] = currentTimeStr.split(':').map(Number);
-        const [sh, sm] = shiftStartTime.split(':').map(Number);
-        const diffMinutes = (h * 60 + m) - (sh * 60 + sm);
-        if (diffMinutes > settings.late_threshold_minutes) {
-          status = AttendanceStatus.LATE;
-        }
+        const settings = await DB.getSettings();
+        const [sh, sm] = settings.attendance_window_start.split(':').map(Number);
+        const [h, m] = timeStr.split(':').map(Number);
+        const diff = (h * 60 + m) - (sh * 60 + sm);
+        const status = diff > settings.late_threshold_minutes ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
 
-        const newAttendance: Attendance = {
-          id: Math.random().toString(36).substr(2, 9),
+        const record = await DB.saveAttendance({
           employee_id: employeeId,
           date: dateStr,
-          time: currentTimeStr,
-          photo_url: capturedImage,
-          latitude: location.lat,
-          longitude: location.lng,
-          device_id: 'BROWSER_DEMO',
-          status,
-          created_at: now.toISOString()
-        };
-
-        DB.saveAttendance([...allAttendance, newAttendance]);
-        onSuccess(newAttendance);
+          time: timeStr,
+          photo_url: photoUrl,
+          latitude: finalLocation.lat,
+          longitude: finalLocation.lng,
+          device_id: 'BROWSER_CLIENT',
+          status
+        });
+        
+        onSuccess(record);
       } else {
-        const existingIdx = allAttendance.findIndex(a => a.employee_id === employeeId && a.date === dateStr);
-        if (existingIdx === -1) {
-          setError("No punch-in record found for today.");
-          setIsProcessing(false);
-          return;
+        const logs = await DB.getAttendance(dateStr);
+        const todayLog = logs.find(l => l.employee_id === employeeId);
+        
+        if (todayLog) {
+          await DB.updateAttendance(todayLog.id, {
+            punch_out_time: timeStr,
+            punch_out_photo_url: photoUrl,
+            punch_out_latitude: finalLocation.lat,
+            punch_out_longitude: finalLocation.lng
+          }, 'SYSTEM');
+          onSuccess({ ...todayLog, punch_out_time: timeStr });
+        } else {
+          const record = await DB.saveAttendance({
+            employee_id: employeeId,
+            date: dateStr,
+            time: '09:00:00',
+            punch_out_time: timeStr,
+            photo_url: 'AUTO_GEN',
+            punch_out_photo_url: photoUrl,
+            latitude: finalLocation.lat,
+            longitude: finalLocation.lng,
+            punch_out_latitude: finalLocation.lat,
+            punch_out_longitude: finalLocation.lng,
+            device_id: 'BROWSER_CLIENT',
+            status: AttendanceStatus.PRESENT
+          });
+          onSuccess(record);
         }
-
-        const updatedAttendance = { ...allAttendance[existingIdx] };
-        updatedAttendance.punch_out_time = currentTimeStr;
-        updatedAttendance.punch_out_photo_url = capturedImage;
-        updatedAttendance.punch_out_latitude = location.lat;
-        updatedAttendance.punch_out_longitude = location.lng;
-
-        const newAll = [...allAttendance];
-        newAll[existingIdx] = updatedAttendance;
-        DB.saveAttendance(newAll);
-        onSuccess(updatedAttendance);
       }
-    } catch (err) {
-      setError("System error. Try again.");
+    } catch (err: any) {
+      console.error("Critical submission failure:", err);
+      // Safe stringification to avoid "Cannot convert object to primitive"
+      const errorMsg = err?.message || (typeof err === 'string' ? err : 'Network Error');
+      setError(`Submit Failed: ${errorMsg}. Please refresh and try again.`);
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-black text-white relative h-full overflow-hidden">
-      {/* Dynamic Header */}
-      <header className="absolute top-10 left-0 right-0 px-8 flex items-center justify-between z-40">
-        <div className="bg-black/20 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10">
-           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Verifying</p>
-           <h4 className="text-sm font-black">{mode === 'IN' ? 'Punch In' : 'Punch Out'}</h4>
+    <div className="flex-1 flex flex-col bg-black text-white relative h-full font-sans">
+      <header className="p-8 flex items-center justify-between z-10">
+        <div className="flex flex-col">
+          <h4 className="font-black uppercase tracking-[0.3em] text-emerald-400 text-[10px]">{mode === 'IN' ? 'ATTENDANCE IN' : 'ATTENDANCE OUT'}</h4>
+          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-1">Selfie Verification</p>
         </div>
         <button 
           onClick={onCancel} 
-          className="w-10 h-10 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"
+          disabled={isProcessing}
+          className="w-10 h-10 bg-white/10 rounded-2xl flex items-center justify-center hover:bg-white/20 transition-all"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          ✕
         </button>
       </header>
 
-      {/* Main Viewport */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        <div className="relative w-full max-w-sm aspect-[3/4] rounded-[3rem] overflow-hidden bg-zinc-900 border-2 border-white/5 shadow-2xl">
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm aspect-[3/4] rounded-[3rem] overflow-hidden bg-zinc-900 relative shadow-2xl border border-white/5">
           {capturedImage ? (
-            <img src={capturedImage} alt="Captured" className="w-full h-full object-cover animate-in fade-in zoom-in-110 duration-500" />
+            <img src={capturedImage} className="w-full h-full object-cover animate-in fade-in" />
           ) : (
-            <div className="relative h-full w-full">
-              <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
-                className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} 
-              />
-              
-              {/* Grid Overlay */}
-              <div className="absolute inset-0 grid grid-cols-3 pointer-events-none">
-                <div className="border-r border-white/10"></div>
-                <div className="border-r border-white/10"></div>
-                <div></div>
-              </div>
-              <div className="absolute inset-0 grid grid-rows-3 pointer-events-none">
-                <div className="border-b border-white/10"></div>
-                <div className="border-b border-white/10"></div>
-                <div></div>
-              </div>
-
-              {/* Countdown Overlay */}
-              {countdown !== null && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-50">
-                  <span className="text-8xl font-black text-white animate-ping">{countdown}</span>
-                </div>
-              )}
-            </div>
+            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]" />
           )}
           <canvas ref={canvasRef} className="hidden" />
-
-          {/* AI Processing Layer */}
+          
           {isProcessing && (
-            <div className="absolute inset-0 bg-emerald-900/90 flex flex-col items-center justify-center text-center p-10 backdrop-blur-xl z-[60] animate-in fade-in">
-              <div className="w-20 h-20 relative mb-6">
-                 <div className="absolute inset-0 border-4 border-white/20 rounded-full"></div>
-                 <div className="absolute inset-0 border-t-4 border-white rounded-full animate-spin"></div>
-              </div>
-              <h5 className="text-xl font-black text-white mb-2 tracking-tight">AI Identity Shield</h5>
-              <p className="text-xs text-white/60 leading-relaxed max-w-[200px]">Checking face alignment and lighting for secure validation...</p>
+            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-12 backdrop-blur-xl animate-in fade-in">
+              <div className="w-10 h-10 border-[4px] border-emerald-400/20 border-t-emerald-400 animate-spin rounded-full mb-6"></div>
+              <h5 className="text-lg font-black text-white tracking-tight">Syncing Record</h5>
+              <p className="font-bold text-gray-500 uppercase tracking-widest text-[8px] mt-1">Encrypted Transfer...</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Footer Controls */}
-      <footer className="px-8 pb-12 flex flex-col items-center gap-8 relative z-40">
+      <footer className="p-8 pb-12 flex flex-col gap-6 bg-gradient-to-t from-black via-black/80 to-transparent">
         {error && (
-          <div className="bg-rose-500/20 backdrop-blur-md text-rose-200 px-5 py-3 rounded-2xl text-xs font-bold border border-rose-500/30 w-full max-w-sm text-center animate-in slide-in-from-bottom-2">
+          <div className="p-4 bg-rose-500/10 text-rose-300 rounded-2xl text-[9px] font-black text-center border border-rose-500/30 uppercase tracking-widest animate-in slide-in-from-bottom-2">
             {error}
           </div>
         )}
-
-        <div className="flex items-center gap-3 bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
-           <div className={`w-2 h-2 rounded-full ${location ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-rose-500 animate-pulse'}`}></div>
-           <span className="text-[9px] font-black uppercase tracking-widest text-white/70">
-            {location ? 'GPS: Safe & Verified' : 'Searching Satellite...'}
-           </span>
-        </div>
-
-        <div className="w-full flex items-center justify-between max-w-sm">
-          {!capturedImage ? (
-            <>
-              <div className="w-14"></div> {/* Spacer */}
-              
-              <button
-                disabled={!location || countdown !== null}
-                onClick={triggerCapture}
-                className="w-24 h-24 rounded-full border-[6px] border-white/20 p-1 group active:scale-90 transition-all disabled:opacity-20"
-              >
-                <div className="w-full h-full rounded-full bg-white shadow-xl flex items-center justify-center group-hover:bg-gray-100">
-                   <div className="w-12 h-12 rounded-full border-2 border-zinc-200"></div>
-                </div>
-              </button>
-
-              <button
-                onClick={toggleCamera}
-                disabled={countdown !== null}
-                className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all border border-white/10 disabled:opacity-50"
-              >
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-            </>
-          ) : (
-            <div className="flex gap-4 w-full animate-in slide-in-from-bottom-4">
-              <button
-                disabled={isProcessing}
-                onClick={() => setCapturedImage(null)}
-                className="flex-1 bg-white/10 backdrop-blur-md py-5 rounded-[2rem] font-black text-sm uppercase tracking-widest border border-white/10 hover:bg-white/20 transition-all"
-              >
-                Retake
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={isProcessing}
-                className="flex-[2] bg-emerald-600 text-white font-black py-5 rounded-[2rem] text-sm uppercase tracking-widest shadow-2xl shadow-emerald-900/40 hover:bg-emerald-500 active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                Submit {mode}
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                </svg>
-              </button>
-            </div>
-          )}
-        </div>
+        
+        {!capturedImage ? (
+          <div className="flex flex-col items-center gap-6">
+            <button 
+              onClick={capturePhoto} 
+              className="w-20 h-20 rounded-full bg-white mx-auto border-[8px] border-white/20 flex items-center justify-center active:scale-90 transition-all shadow-2xl"
+            >
+               <div className="w-10 h-10 rounded-full border-2 border-zinc-200"></div>
+            </button>
+            <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">
+              Tap the button to take a selfie
+            </p>
+          </div>
+        ) : (
+          <div className="flex gap-4">
+            <button 
+              onClick={() => { setCapturedImage(null); startCamera(); }} 
+              disabled={isProcessing} 
+              className="flex-1 py-5 bg-zinc-900 text-white rounded-[2rem] font-black uppercase tracking-widest text-[9px] border border-white/10"
+            >
+              Retake
+            </button>
+            <button 
+              onClick={handleSubmit} 
+              disabled={isProcessing} 
+              className="flex-[2] py-5 bg-emerald-600 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] text-[9px] shadow-xl hover:bg-emerald-500 transition-all active:scale-95"
+            >
+              Verify & Punch
+            </button>
+          </div>
+        )}
       </footer>
     </div>
   );
