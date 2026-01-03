@@ -23,23 +23,29 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     setError(null);
 
     try {
+      // 1. Authenticate with Supabase Auth
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        throw new Error(authError.message === 'Invalid login credentials' 
+          ? "Login failed: Check your email and password in Supabase > Auth > Users." 
+          : authError.message);
+      }
 
       if (data.user) {
+        // 2. Fetch or Sync User Profile
         const session = await DB.getCurrentSession();
         if (session) {
           onLogin(session);
         } else {
-          setError("Profile initialization failed. Please contact support.");
+          setError("Auth successful but session failed to load. Ensure you've run the SQL schema in lib/db.ts.");
         }
       }
     } catch (err: any) {
-      setError(err.message || "Invalid credentials. Try again.");
+      setError(err.message || "An unexpected login error occurred.");
     } finally {
       setIsSubmitting(false);
     }
@@ -48,7 +54,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
   const handleSeed = async () => {
     setIsSeeding(true);
     try {
-      const msg = await DB.seedDemoData();
+      await DB.seedDemoData();
       setShowSeedGuide(true);
     } catch (err: any) {
       alert(err.message);
@@ -78,7 +84,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
           </div>
           <h1 className="text-4xl font-black text-gray-900 tracking-tighter">Photo<span className={`${isEmployee ? 'text-emerald-600' : 'text-indigo-600'} transition-colors duration-500`}>Hub</span></h1>
           <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.3em] mt-3">
-            {isEmployee ? 'Employee Punch-In' : 'Administrative Center'}
+            {isEmployee ? 'Employee Portal' : 'Admin Terminal'}
           </p>
         </div>
 
@@ -89,13 +95,13 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             }`}
           />
           <button
-            onClick={() => setActiveTab(UserRole.EMPLOYEE)}
+            onClick={() => { setActiveTab(UserRole.EMPLOYEE); setEmail('staff@demo.com'); setPassword('Staff@123'); setError(null); }}
             className={`flex-1 py-3.5 text-xs font-black uppercase tracking-widest relative z-10 transition-colors duration-300 ${isEmployee ? 'text-white' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Staff
           </button>
           <button
-            onClick={() => setActiveTab(UserRole.ADMIN)}
+            onClick={() => { setActiveTab(UserRole.ADMIN); setEmail('admin@demo.com'); setPassword('Admin@123'); setError(null); }}
             className={`flex-1 py-3.5 text-xs font-black uppercase tracking-widest relative z-10 transition-colors duration-300 ${!isEmployee ? 'text-white' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Admin
@@ -103,127 +109,80 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         </div>
 
         {error && (
-          <div className="mb-8 p-5 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-black rounded-[1.5rem] flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
+          <div className="mb-8 p-5 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-black rounded-[1.5rem] flex items-center gap-4">
              <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
              </div>
-             {error}
+             <p className="leading-tight">{error}</p>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 ml-2">Email Address</label>
-            <div className="relative group">
-              <div className={`absolute left-5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${isEmployee ? 'text-emerald-300 group-focus-within:text-emerald-600' : 'text-indigo-300 group-focus-within:text-indigo-600'}`}>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-              </div>
-              <input
-                type="email"
-                required
-                placeholder={isEmployee ? 'staff@demo.com' : 'admin@demo.com'}
-                className={`w-full pl-14 pr-6 py-5 rounded-[1.8rem] border border-gray-100 bg-gray-50/50 font-bold focus:ring-4 outline-none transition-all ${isEmployee ? 'focus:ring-emerald-500/10 focus:bg-white focus:border-emerald-100' : 'focus:ring-indigo-500/10 focus:bg-white focus:border-indigo-100'}`}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
+            <input
+              type="email"
+              required
+              className={`w-full px-6 py-5 rounded-[1.8rem] border border-gray-100 bg-gray-50/50 font-bold focus:ring-4 outline-none transition-all ${isEmployee ? 'focus:ring-emerald-500/10' : 'focus:ring-indigo-500/10'}`}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
 
           <div>
             <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 ml-2">Password</label>
-            <div className="relative group">
-              <div className={`absolute left-5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${isEmployee ? 'text-emerald-300 group-focus-within:text-emerald-600' : 'text-indigo-300 group-focus-within:text-indigo-600'}`}>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-              </div>
-              <input
-                type="password"
-                required
-                placeholder="••••••••"
-                className={`w-full pl-14 pr-6 py-5 rounded-[1.8rem] border border-gray-100 bg-gray-50/50 font-bold focus:ring-4 outline-none transition-all ${isEmployee ? 'focus:ring-emerald-500/10 focus:bg-white focus:border-emerald-100' : 'focus:ring-indigo-500/10 focus:bg-white focus:border-indigo-100'}`}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            <input
+              type="password"
+              required
+              className={`w-full px-6 py-5 rounded-[1.8rem] border border-gray-100 bg-gray-50/50 font-bold focus:ring-4 outline-none transition-all ${isEmployee ? 'focus:ring-emerald-500/10' : 'focus:ring-indigo-500/10'}`}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
           </div>
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className={`w-full text-white font-black py-5 rounded-[1.8rem] shadow-2xl transition-all active:scale-[0.97] disabled:opacity-50 text-[11px] uppercase tracking-[0.25em] flex items-center justify-center gap-4 ${
-              isEmployee ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+            className={`w-full text-white font-black py-5 rounded-[1.8rem] shadow-2xl transition-all active:scale-[0.97] disabled:opacity-50 text-[11px] uppercase tracking-[0.25em] ${
+              isEmployee ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
             }`}
           >
-            {isSubmitting ? (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-            ) : (
-              <>
-                {isEmployee ? 'Punch In Portal' : 'Admin Hub Access'}
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-              </>
-            )}
+            {isSubmitting ? 'Verifying...' : 'Sign In Now'}
           </button>
         </form>
 
-        <div className="mt-10 text-center flex flex-col items-center gap-4">
-          <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest flex items-center justify-center gap-3 w-full">
-            <span className="flex-1 h-px bg-gray-100"></span>
-            Demo Control Center
-            <span className="flex-1 h-px bg-gray-100"></span>
-          </p>
-          
+        <div className="mt-8 text-center">
           <button 
             onClick={handleSeed}
             disabled={isSeeding}
-            className="text-[9px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-widest py-2 px-4 bg-emerald-50 rounded-full transition-all border border-emerald-100/50 active:scale-95 disabled:opacity-50"
+            className="text-[9px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-widest py-2 px-4 bg-emerald-50 rounded-full transition-all border border-emerald-100/50"
           >
-            {isSeeding ? 'Initializing Tables...' : '⚙️ Setup Demo Environment'}
+            {isSeeding ? 'Connecting...' : '🔧 Fix Login Issues (Setup Guide)'}
           </button>
         </div>
       </div>
 
-      {/* Seeding Guide Modal */}
       {showSeedGuide && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 lg:p-10 shadow-2xl animate-in zoom-in-95">
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              </div>
-              <h3 className="text-2xl font-black text-gray-900 tracking-tight">Environment Ready</h3>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Next steps for real Supabase testing</p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">1. Authentication Setup</p>
-                <p className="text-sm font-bold text-gray-700 leading-relaxed">
-                  Go to your <span className="text-emerald-600">Supabase Dashboard > Auth > Users</span> and manually create these accounts:
-                </p>
-                <ul className="mt-3 space-y-2">
-                  <li className="flex justify-between items-center text-xs font-black p-3 bg-white rounded-xl border border-gray-100">
-                    <span>Admin: admin@demo.com</span>
-                    <span className="text-gray-400 text-[10px]">Pass: Admin@123</span>
-                  </li>
-                  <li className="flex justify-between items-center text-xs font-black p-3 bg-white rounded-xl border border-gray-100">
-                    <span>Staff: staff@demo.com</span>
-                    <span className="text-gray-400 text-[10px]">Pass: Staff@123</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100">
-                <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-2">2. Schema Requirement</p>
-                <p className="text-xs font-bold text-amber-800 leading-relaxed italic">
-                  Ensure you've run the SQL script found in `lib/db.ts` comments in your Supabase SQL Editor.
-                </p>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 shadow-2xl">
+            <h3 className="text-2xl font-black text-gray-900 mb-4 tracking-tight">Database Troubleshoot</h3>
+            <div className="space-y-4 text-xs font-bold text-gray-600 leading-relaxed">
+              <p>If you've created users in Supabase Auth but can't log in:</p>
+              <ol className="list-decimal pl-5 space-y-3">
+                <li>Copy the SQL in <code className="bg-gray-100 px-1">lib/db.ts</code>.</li>
+                <li>Go to your **Supabase Dashboard > SQL Editor**.</li>
+                <li>Paste and **Run** the script. This creates the profiles and RLS policies.</li>
+                <li>Run the **BACKFILL SCRIPT** (at the bottom of the code) to sync existing users.</li>
+              </ol>
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-amber-700">
+                Ensure **Row Level Security (RLS)** is not blocking your reads. For debugging, you can disable RLS on the `profiles` table.
               </div>
             </div>
-
             <button 
               onClick={() => setShowSeedGuide(false)}
-              className="w-full mt-8 bg-gray-900 text-white font-black py-5 rounded-[1.8rem] shadow-xl hover:bg-black transition-all text-xs uppercase tracking-widest"
+              className="w-full mt-8 bg-gray-900 text-white font-black py-5 rounded-[1.8rem] shadow-xl uppercase text-xs tracking-widest"
             >
-              I've Created the Users
+              Done
             </button>
           </div>
         </div>
