@@ -49,7 +49,7 @@ const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ session, onLogo
       case 'OVERVIEW': return <AdminOverview />;
       case 'EMPLOYEES': return <EmployeeManagement />;
       case 'ATTENDANCE': return <AttendanceLogs />;
-      case 'ANALYTICS': return <EmployeeAnalytics />;
+      // case 'ANALYTICS': return <EmployeeAnalytics />;
       case 'SETTINGS': return <AdminSettings />;
       default: return <AdminOverview />;
     }

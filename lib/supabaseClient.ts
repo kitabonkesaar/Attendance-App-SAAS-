@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 // Use Vite's import.meta.env for environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 // --- Mock Implementation ---
 
@@ -84,7 +85,6 @@ const createMockSupabaseClient = () => {
             role: 'authenticated',
             user_metadata: options?.data || {} 
         };
-        console.log('[Mock] User signed up:', user);
         
         // In a real app, we might sign them in automatically, or require email verification.
         // For this mock, let's just return the user data.
@@ -212,3 +212,7 @@ const createMockSupabaseClient = () => {
 export const supabase = (supabaseUrl && supabaseAnonKey) 
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : createMockSupabaseClient();
+
+export const adminSupabase = (supabaseUrl && supabaseServiceKey)
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : supabase;

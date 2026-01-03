@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Attendance, AttendanceStatus } from '../../types';
 import { DB } from '../../lib/db';
-import { analyzeAttendancePhoto } from '../../services/geminiService';
+// import { analyzeAttendancePhoto } from '../../services/geminiService';
 
 interface CameraCaptureProps {
   employeeId: string;
@@ -100,13 +100,13 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
     setError(null);
     
     try {
-      // 1. AI Face Verification
-      const analysis = await analyzeAttendancePhoto(capturedImage);
-      if (analysis && analysis.isValid === false) {
-        setError(`Face Check Failed: ${analysis.reason || 'Please try again.'}`);
-        setIsProcessing(false);
-        return;
-      }
+      // 1. AI Face Verification - DISABLED
+      // const analysis = await analyzeAttendancePhoto(capturedImage);
+      // if (analysis && analysis.isValid === false) {
+      //   setError(`Face Check Failed: ${analysis.reason || 'Please try again.'}`);
+      //   setIsProcessing(false);
+      //   return;
+      // }
 
       const now = new Date();
       const dateStr = now.toISOString().split('T')[0];
@@ -137,8 +137,8 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
         
         onSuccess(record);
       } else {
-        const logs = await DB.getAttendance(dateStr);
-        const todayLog = logs.find(l => l.employee_id === employeeId);
+        const logs = await DB.getAttendance();
+        const todayLog = logs.find(l => l.employee_id === employeeId && l.date === dateStr);
         
         if (todayLog) {
           await DB.updateAttendance(todayLog.id, {

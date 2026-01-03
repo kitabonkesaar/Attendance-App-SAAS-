@@ -25,15 +25,24 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     setIsSubmitting(true);
     setError(null);
 
-    // Safety timeout to prevent infinite hanging
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Request timed out. Please check your internet connection or Supabase URL.")), 10000)
-    );
+    // Safety timeout (extended to 60s for cold starts/paused projects)
+    // Removed strict timeout wrapper to allow slow connections to complete naturally.
+    // const timeoutPromise = new Promise((_, reject) => 
+    //   setTimeout(() => reject(new Error("Connection timed out. If this is a free Supabase project, it might be paused. Please check your Supabase dashboard.")), 60000)
+    // );
+
+    console.log("Attempting login with:", { email, isMobile: isMobileNumber(email) });
 
     try {
+      // 0. Aggressive Reset (Only remove auth token, keep other keys)
+      // localStorage.removeItem('supabase.auth.token'); // <-- Commented out to prevent aggressive logout loops
+
       let loginEmail = email;
 
-      // 1. If input is mobile, lookup email
+      // 1. Connection Check (Using Supabase Client to avoid CORS issues)
+      // Skipped completely to avoid any pre-flight delays or RLS errors
+      // const { error: pingError } = await supabase.from('app_settings').select('id').limit(1).maybeSingle();
+      
       if (isMobileNumber(email)) {
         const { data: employees, error: fetchError } = await supabase
           .from('employees')
@@ -48,12 +57,14 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
       }
 
       // 2. Authenticate with Supabase Auth
-      const loginPromise = supabase.auth.signInWithPassword({
+      // Attempt simple connection check first to fail fast if URL/Key is invalid
+      if (!supabase.auth) throw new Error("Supabase client not initialized");
+      
+      const result = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password,
       });
 
-      const result: any = await Promise.race([loginPromise, timeoutPromise]);
       const { data, error: authError } = result;
 
       if (authError) {
@@ -63,33 +74,26 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
       }
 
       if (data.user) {
-        // 2. Fetch or Sync User Profile
-        const sessionPromise = DB.getCurrentSession();
-        const sessionResult: any = await Promise.race([sessionPromise, timeoutPromise]);
+        console.log("Auth successful, constructing optimistic session...");
         
-        if (sessionResult) {
-          onLogin(sessionResult);
-        } else {
-          setError("Auth successful but session failed to load. Ensure you've run the SQL schema in lib/db.ts.");
-        }
+        // 2. Optimistic Login (Don't wait for DB fetch, let App.tsx handle sync)
+        const optimisticSession: UserSession = {
+            id: data.user.id,
+            name: data.user.email?.split('@')[0] || 'User',
+            role: data.user.email?.includes('admin') ? UserRole.ADMIN : UserRole.EMPLOYEE,
+            employee_id: data.user.id
+        };
+        
+        // Cache immediately for fast reload if user refreshes page
+        localStorage.setItem('app_session', JSON.stringify(optimisticSession));
+        
+        onLogin(optimisticSession);
       }
     } catch (err: any) {
       console.error("Login Error:", err);
       setError(err.message || "An unexpected login error occurred.");
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleSeed = async () => {
-    setIsSeeding(true);
-    try {
-      await DB.seedDemoData();
-      setShowSeedGuide(true);
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsSeeding(false);
     }
   };
 
@@ -183,43 +187,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             {isSubmitting ? 'Verifying...' : 'Sign In Now'}
           </button>
         </form>
-
-        <div className="mt-8 text-center">
-          <button 
-            onClick={handleSeed}
-            disabled={isSeeding}
-            className="text-[9px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-widest py-2 px-4 bg-emerald-50 rounded-full transition-all border border-emerald-100/50"
-          >
-            {isSeeding ? 'Connecting...' : '🔧 Fix Login Issues (Setup Guide)'}
-          </button>
-        </div>
       </div>
-
-      {showSeedGuide && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 shadow-2xl">
-            <h3 className="text-2xl font-black text-gray-900 mb-4 tracking-tight">Database Troubleshoot</h3>
-            <div className="space-y-4 text-xs font-bold text-gray-600 leading-relaxed">
-              <p>If you've created users in Supabase Auth but can't log in:</p>
-              <ol className="list-decimal pl-5 space-y-3">
-                <li>Copy the SQL in <code className="bg-gray-100 px-1">lib/db.ts</code>.</li>
-                <li>Go to your **Supabase Dashboard &gt; SQL Editor**.</li>
-                <li>Paste and **Run** the script. This creates the profiles and RLS policies.</li>
-                <li>Run the **BACKFILL SCRIPT** (at the bottom of the code) to sync existing users.</li>
-              </ol>
-              <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-amber-700">
-                Ensure **Row Level Security (RLS)** is not blocking your reads. For debugging, you can disable RLS on the `profiles` table.
-              </div>
-            </div>
-            <button 
-              onClick={() => setShowSeedGuide(false)}
-              className="w-full mt-8 bg-gray-900 text-white font-black py-5 rounded-[1.8rem] shadow-xl uppercase text-xs tracking-widest"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -18,8 +18,7 @@ const AdminSettings: React.FC = () => {
 
   const handleSave = async () => {
     if (!settings) return;
-    // Fix: Await async saveSettings database operation
-    await DB.saveSettings(settings, 'admin1');
+    await DB.updateAppSettings(settings, 'admin1');
     setSaveStatus("Global configuration updated!");
     setTimeout(() => setSaveStatus(null), 3000);
   };

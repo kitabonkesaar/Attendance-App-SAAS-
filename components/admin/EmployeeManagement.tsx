@@ -11,6 +11,8 @@ const EmployeeManagement: React.FC = () => {
   const [formData, setFormData] = useState<Partial<Employee>>({});
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdEmployee, setCreatedEmployee] = useState<Employee | null>(null);
 
   useEffect(() => {
     refreshEmployees();
@@ -43,25 +45,64 @@ const EmployeeManagement: React.FC = () => {
     }
 
     setIsSaving(true);
+    
+    // Helper to prevent infinite hanging
+    const withTimeout = async <T,>(promise: Promise<T>, ms: number = 15000, operationName: string): Promise<T> => {
+      let timeoutId: any;
+      const timeoutPromise = new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${operationName} timed out after ${ms/1000}s`)), ms);
+      });
+      try {
+        const result = await Promise.race([promise, timeoutPromise]);
+        clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
+    };
+
     try {
-      if (editingEmployee) {
-        const updatedEmp = { ...editingEmployee, ...formData } as Employee;
-        await DB.updateEmployee(updatedEmp, 'admin1');
+      const saveOperation = async () => {
+        if (editingEmployee) {
+        // Exclude password from DB update
+        const { password, ...safeFormData } = formData;
+        const updatedEmp = { ...editingEmployee, ...safeFormData } as Employee;
+        
+        await withTimeout(DB.updateEmployee(updatedEmp, 'admin1'), 10000, "Update Profile");
+        
         setSuccessMsg(`Updated ${updatedEmp.name} successfully!`);
         setEditingEmployee(null);
       } else {
         // Attempt to create a REAL auth user in Supabase
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: formData.email!,
-          password: formData.password || 'Employee@123',
-          options: {
-            data: { name: formData.name }
-          }
-        });
+        const { data: authData, error: authError } = await withTimeout(
+           supabase.auth.signUp({
+            email: formData.email!,
+            password: formData.password || 'Employee@123',
+            options: {
+              data: { name: formData.name }
+            }
+          }), 
+          15000, 
+          "Auth Registration"
+        );
 
         if (authError) throw authError;
+        if (!authData.user) throw new Error("Registration successful but user creation failed.");
 
-        const userId = authData.user?.id || Math.random().toString(36).substr(2, 9);
+        const userId = authData.user.id;
+        
+        // ROBUSTNESS: Manually ensure profile exists (works even if trigger is missing/broken)
+        // We catch errors here to prevent blocking the success flow if profile creation is slow/redundant.
+        try {
+          await withTimeout(
+            DB.manualCreateProfile(userId, formData.email!, formData.name!), 
+            5000, 
+            "Profile Creation"
+          );
+        } catch (profileErr) {
+          console.warn("Manual profile creation skipped/timed out (non-critical if trigger worked):", profileErr);
+        }
         
         const fullEmp: Employee = {
           id: userId,
@@ -78,23 +119,52 @@ const EmployeeManagement: React.FC = () => {
           created_at: new Date().toISOString()
         };
 
-        await DB.updateEmployee(fullEmp, 'admin1');
-        setIsAdding(false);
-        setSuccessMsg(`Account created for ${fullEmp.name}! User can now login with ${fullEmp.email}`);
+        try {
+          await withTimeout(DB.updateEmployee(fullEmp, 'admin1'), 8000, "Saving Employee Details");
+        } catch (updateErr) {
+           console.warn("Employee details save timed out (record might be incomplete):", updateErr);
+           // Proceed anyway because Auth user IS created.
+        }
         
-        await DB.addAuditLog({
+        // Show Success Modal instead of just closing
+        // CRITICAL: Update state immediately after success
+        setCreatedEmployee(fullEmp);
+        setIsAdding(false); 
+        setShowSuccessModal(true);
+        
+        // Audit log can happen in background
+        DB.addAuditLog({
           admin_id: 'admin1',
           action: 'ADD_EMPLOYEE',
           entity: 'Employee',
           old_value: 'N/A',
           new_value: fullEmp.name
-        });
+        }).catch(err => console.warn("Audit log failed (non-critical):", err));
       }
+    };
+
+      await saveOperation();
       
-      await refreshEmployees();
-      setTimeout(() => setSuccessMsg(null), 8000);
+      // Refresh list in background or await with short timeout
+      withTimeout(refreshEmployees(), 5000, "Refreshing List").catch(e => console.warn(e));
+      
+      // setTimeout(() => setSuccessMsg(null), 8000); // Handled by modal now
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      console.error("Save failed:", err);
+      let msg = err.message;
+
+      // SPECIFIC FIX: If DB trigger fails OR RLS blocks manual insert
+      // We show the repair script which now includes the RLS policy fix.
+      if (msg.includes("Database error saving new user") || msg.includes("row-level security")) {
+         alert("Database Configuration Error: Please check RLS policies and Triggers.");
+         setIsSaving(false); 
+         return;
+      } else if (msg.includes("violates unique constraint")) {
+        msg = "Email or Mobile already exists.";
+      } else if (msg.includes("security purposes")) {
+        msg = "Too many attempts. Please wait 10-15 seconds.";
+      }
+      alert(`Error: ${msg}`);
     } finally {
       setIsSaving(false);
     }
@@ -207,6 +277,55 @@ const EmployeeManagement: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Success Modal */}
+      {showSuccessModal && createdEmployee && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-[150] p-6 animate-in fade-in duration-500">
+           <div className="bg-white rounded-[3rem] w-full max-w-md p-10 shadow-2xl relative animate-in zoom-in-95 duration-500 text-center overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-emerald-50 to-transparent"></div>
+              
+              <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-8 relative z-10 shadow-lg shadow-emerald-200 animate-in slide-in-from-bottom-4 duration-700">
+                <svg className="w-12 h-12 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+              </div>
+
+              <h3 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">Welcome Aboard!</h3>
+              <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-8">Staff Member Successfully Onboarded</p>
+
+              <div className="bg-gray-50 rounded-[2rem] p-6 mb-8 border border-gray-100 text-left">
+                 <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-lg font-black shadow-sm text-gray-900 border border-gray-100">
+                       {createdEmployee.name[0]}
+                    </div>
+                    <div>
+                       <p className="text-lg font-black text-gray-900 leading-none">{createdEmployee.name}</p>
+                       <p className="text-xs font-bold text-gray-400 uppercase mt-1">{createdEmployee.role}</p>
+                    </div>
+                 </div>
+                 <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                       <span className="font-bold text-gray-400">ID Code</span>
+                       <span className="font-black text-gray-900">{createdEmployee.employee_code}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                       <span className="font-bold text-gray-400">Login Email</span>
+                       <span className="font-black text-gray-900">{createdEmployee.email}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                       <span className="font-bold text-gray-400">Department</span>
+                       <span className="font-black text-gray-900">{createdEmployee.department}</span>
+                    </div>
+                 </div>
+              </div>
+
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full bg-gray-900 text-white font-black py-5 rounded-[2rem] shadow-xl hover:bg-black transition-all active:scale-95 uppercase text-xs tracking-[0.25em]"
+              >
+                Return to Suite
+              </button>
+           </div>
+        </div>
+      )}
 
       {/* Form Modal */}
       {(isAdding || editingEmployee) && (

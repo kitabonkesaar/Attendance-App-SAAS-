@@ -54,7 +54,6 @@ const AdminOverview: React.FC = () => {
         'postgres_changes',
         { event: '*', table: 'attendance', schema: 'public' },
         (payload) => {
-          console.log('Real-time update received:', payload);
           fetchData(); // Re-sync data when any change happens
         }
       )
@@ -120,60 +119,8 @@ const AdminOverview: React.FC = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-        {/* Chart Card */}
-        <div className="lg:col-span-2 bg-white p-6 lg:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-             <div>
-               <h4 className="text-lg lg:text-xl font-black text-gray-900 tracking-tight">Shift Performance</h4>
-               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Today's Real-time Snapshot</p>
-             </div>
-             <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-full border border-emerald-100 uppercase tracking-widest">
-               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-               Live
-             </div>
-          </div>
-          <div className="h-64 lg:h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 700}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 700}} />
-                <Tooltip 
-                   cursor={{fill: '#f8fafc', radius: 12}}
-                   contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', padding: '12px'}}
-                   itemStyle={{fontWeight: 900, textTransform: 'uppercase', fontSize: '10px'}}
-                />
-                <Bar dataKey="value" radius={[10, 10, 0, 0]} barSize={32}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* AI Insight Card */}
-        <div className="bg-emerald-600 p-8 rounded-[2.5rem] shadow-2xl shadow-emerald-200 text-white flex flex-col justify-between relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 blur-3xl -mr-16 -mt-16 rounded-full group-hover:bg-white/20 transition-all duration-700"></div>
-          
-          <div className="relative z-10">
-            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-md border border-white/20">
-               <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-               </svg>
-            </div>
-            <h4 className="text-2xl font-black mb-3 tracking-tighter">Workforce Intelligence</h4>
-            <p className="text-emerald-50 leading-relaxed font-bold text-sm italic">
-              "{insights}"
-            </p>
-          </div>
-          
-          <button className="relative z-10 mt-8 bg-white text-emerald-700 font-black py-4 rounded-2xl shadow-xl shadow-emerald-900/10 hover:bg-emerald-50 active:scale-95 transition-all text-xs uppercase tracking-[0.2em]">
-            Deep Analytics
-          </button>
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Content removed as per data removal request */}
       </div>
     </div>
   );

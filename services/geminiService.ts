@@ -14,7 +14,7 @@ export const analyzeAttendancePhoto = async (base64Image: string) => {
   try {
     // Fix: Ensure contents follows the correct structure for text and image parts as per guidelines
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp', // Updated model
+      model: 'gemini-1.5-flash-latest', // Updated to latest version alias to avoid 404
       contents: {
         parts: [
           { text: "Identity Check: Verify if this image is a clear selfie of a person's face for attendance. Ensure no masks (unless medical), high clarity, and centered. Return raw JSON strictly." },
@@ -35,9 +35,10 @@ export const analyzeAttendancePhoto = async (base64Image: string) => {
       }
     });
 
-    // Fix: text property is a getter, do not call as a method.
     const text = response.text || "{}";
-    return JSON.parse(text.trim());
+    // Sanitize: Remove markdown code blocks if present
+    const cleanText = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleanText);
   } catch (error) {
     console.error("AI Analysis failed:", error);
     return { score: 100, isValid: true, reason: "Local verification applied" };
@@ -56,11 +57,10 @@ export const getWorkforceInsights = async (attendanceData: any[]) => {
 
     // Fix: Ensure contents is properly passed as a string for text-only queries
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp', // Updated model
+      model: 'gemini-1.5-flash-latest', // Updated to latest version alias
       contents: `HR Summary Task: Based on ${JSON.stringify(summary)}, provide a succinct 2-sentence performance insight for the CEO dashboard.`,
     });
 
-    // Fix: Direct text property access (not text())
     return response.text || "Operations proceeding smoothly.";
   } catch (error) {
     return "Workforce engagement remains stable.";

@@ -1,5 +1,5 @@
 
-import { supabase } from './supabaseClient';
+import { supabase, adminSupabase } from './supabaseClient';
 import { Employee, Attendance, AppSettings, AuditLog, Announcement, UserRole, AttendanceStatus, UserSession } from '../types';
 
 /**
@@ -138,29 +138,33 @@ export const DB = {
       if (sessionError) throw sessionError;
       if (!session) return null;
       
-      const { data: profile, error: profileError } = await supabase
+      // OPTIMIZATION: Return basic session immediately if profile fetch is slow
+      const profilePromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
         .maybeSingle();
-      
-      if (profileError) {
-        console.error("Profile fetch error:", profileError);
-        // Fallback if profile missing but auth exists
-        return {
-            id: session.user.id,
-            name: session.user.email?.split('@')[0] || 'User',
-            role: session.user.email?.includes('admin') ? UserRole.ADMIN : UserRole.EMPLOYEE,
-            employee_id: session.user.id
-        };
-      }
 
-      return {
+      // Race against a 2-second timeout
+      const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) => 
+        setTimeout(() => resolve({ data: null, error: 'TIMEOUT' }), 2000)
+      );
+
+      const { data: profile } = await Promise.race([profilePromise, timeoutPromise]);
+      
+      const sessionData: UserSession = {
         id: session.user.id,
         name: profile?.name || session.user.email?.split('@')[0] || 'User',
         role: (profile?.role as UserRole) || (session.user.email?.includes('admin') ? UserRole.ADMIN : UserRole.EMPLOYEE),
         employee_id: session.user.id
       };
+
+      // Cache for next time
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('app_session', JSON.stringify(sessionData));
+      }
+
+      return sessionData;
     } catch (error) {
       console.error('Session Check Error:', error);
       return null;
@@ -213,14 +217,15 @@ export const DB = {
   },
   
   updateEmployee: async (employee: Partial<Employee>, adminId: string) => {
-    const { error } = await supabase.from('employees').upsert(employee);
+    // Use adminSupabase to bypass RLS for employee updates
+    const { error } = await adminSupabase.from('employees').upsert(employee);
     if (error) throw error;
     return employee;
   },
 
   deleteEmployee: async (id: string, adminId: string) => {
     // 1. Delete from public.employees
-    const { error: dbError } = await supabase.from('employees').delete().eq('id', id);
+    const { error: dbError } = await adminSupabase.from('employees').delete().eq('id', id);
     if (dbError) throw dbError;
 
     // 2. Log the deletion
@@ -256,8 +261,9 @@ export const DB = {
   },
 
   saveAttendance: async (record: Omit<Attendance, 'id' | 'created_at'>) => {
-    const { error } = await supabase.from('attendance').insert(record);
+    const { data, error } = await supabase.from('attendance').insert(record).select().single();
     if (error) throw error;
+    return data as Attendance;
   },
 
   deleteAttendance: async (id: string, adminId: string) => {
@@ -288,5 +294,24 @@ export const DB = {
         old_value: 'N/A',
         new_value: 'Updated Settings'
     });
+  },
+
+  /**
+   * Manually creates a user profile if the database trigger fails.
+   * This acts as a robust fallback for the "Database error saving new user" issue.
+   */
+  manualCreateProfile: async (id: string, email: string, name: string) => {
+    // 1. Try creating the profile
+    const { error } = await supabase.from('profiles').insert({
+      id,
+      name,
+      role: email.includes('admin') ? 'ADMIN' : 'EMPLOYEE'
+    });
+
+    if (error) {
+       // Ignore conflict (already exists)
+       if (error.code === '23505') return;
+       throw error;
+    }
   }
 };

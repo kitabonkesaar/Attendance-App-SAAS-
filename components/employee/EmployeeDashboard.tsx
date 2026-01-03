@@ -196,8 +196,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, onLogout
 
       <main className="flex-1 overflow-y-auto pt-12">
         {activeTab === 'HOME' && renderHome()}
-        {activeTab === 'HISTORY' && <div className="p-6 font-black text-gray-900 uppercase tracking-widest">Shift Logs • Detailed History Coming Soon</div>}
-        {activeTab === 'PROFILE' && <div className="p-6 font-black text-gray-900 uppercase tracking-widest">Account • Profile Management Coming Soon</div>}
+        {activeTab === 'HISTORY' && <div className="p-6 text-center text-gray-400 text-sm">No history records found.</div>}
+        {activeTab === 'PROFILE' && <div className="p-6 text-center text-gray-400 text-sm">Profile data unavailable.</div>}
       </main>
 
       <div className="fixed bottom-8 left-6 right-6 z-40">
