@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { UserSession, Attendance, AttendanceStatus, Employee, Announcement } from '../../types';
-import { DB } from '../../lib/db';
+import { UserSession, Attendance, AttendanceStatus, Employee, Announcement } from '../types';
+import { DB } from '../lib/db';
 import CameraCapture from './CameraCapture';
 
 interface EmployeeDashboardProps {
@@ -82,7 +82,10 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, onLogout
           <h2 className="text-3xl font-black text-gray-900 tracking-tighter">
             Hello, <span className="text-emerald-600">{session.name.split(' ')[0]}</span>
           </h2>
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">Shift: {employee?.shift_start} - {employee?.shift_end}</p>
+          <div className="flex flex-col gap-0.5 mt-1">
+             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Shift: {employee?.shift_start} - {employee?.shift_end}</p>
+             <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">ID: {employee?.employee_code}</p>
+          </div>
         </div>
         <button 
           onClick={() => setIsMenuOpen(true)}

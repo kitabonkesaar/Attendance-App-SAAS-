@@ -14,15 +14,18 @@
     "@modelcontextprotocol/sdk": "^1.25.1",
     "@supabase/supabase-js": "^2.89.0",
     "dotenv": "^16.6.1",
+    "js-cookie": "^3.0.5",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "recharts": "^3.6.0"
   },
   "devDependencies": {
+    "@types/js-cookie": "^3.0.6",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
+    "ts-node": "^10.9.2",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

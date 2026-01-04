@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Attendance, AttendanceStatus } from '../../types';
-import { DB } from '../../lib/db';
+import { Attendance, AttendanceStatus } from '../types';
+import { DB } from '../lib/db';
 // import { analyzeAttendancePhoto } from '../../services/geminiService';
 
 interface CameraCaptureProps {
@@ -30,6 +30,34 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
 
   const startCamera = async () => {
     try {
+      // Robust check for MediaDevices API (handles HTTP/Insecure Contexts gracefully)
+      const hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      
+      if (!hasMediaDevices) {
+         // Fallback for legacy browsers or insecure contexts
+         const rawNavigator = navigator as any;
+         const legacyGetUserMedia = rawNavigator.getUserMedia || 
+                                    rawNavigator.webkitGetUserMedia || 
+                                    rawNavigator.mozGetUserMedia || 
+                                    rawNavigator.msGetUserMedia;
+                                    
+         if (legacyGetUserMedia) {
+             // Wrap legacy callback API in Promise
+             const stream = await new Promise<MediaStream>((resolve, reject) => {
+                 legacyGetUserMedia.call(rawNavigator, 
+                    { video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+                    resolve,
+                    reject
+                 );
+             });
+             setStream(stream);
+             if (videoRef.current) videoRef.current.srcObject = stream;
+             return;
+         }
+         
+         throw new Error("Camera API unavailable. Please use HTTPS or Upload Photo.");
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, 
         audio: false 
@@ -38,7 +66,11 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
       if (videoRef.current) videoRef.current.srcObject = mediaStream;
     } catch (err: any) {
       console.error("Camera access error:", err);
-      setError(`Camera Error: ${err.message || "Access blocked"}.`);
+      let msg = err.message || "Access blocked";
+      if (err.name === 'NotAllowedError') msg = "Permission denied. Allow camera access.";
+      if (err.name === 'NotFoundError') msg = "No camera found.";
+      if (err.name === 'NotReadableError') msg = "Camera is in use by another app.";
+      setError(`Camera Error: ${msg}`);
     }
   };
 

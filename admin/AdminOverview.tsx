@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { DB } from '../../lib/db';
-import { supabase } from '../../lib/supabaseClient';
-import { AttendanceStatus } from '../../types';
-import { getWorkforceInsights } from '../../services/geminiService';
+import { DB } from '../lib/db';
+import { supabase } from '../lib/supabaseClient';
+import { AttendanceStatus } from '../types';
+import { getWorkforceInsights } from '../services/geminiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const AdminOverview: React.FC = () => {

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { UserSession } from '../../types';
+import { UserSession } from '../types';
 import AdminOverview from './AdminOverview';
 import EmployeeManagement from './EmployeeManagement';
 import AttendanceLogs from './AttendanceLogs';
@@ -49,7 +49,7 @@ const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ session, onLogo
       case 'OVERVIEW': return <AdminOverview />;
       case 'EMPLOYEES': return <EmployeeManagement />;
       case 'ATTENDANCE': return <AttendanceLogs />;
-      // case 'ANALYTICS': return <EmployeeAnalytics />;
+      case 'ANALYTICS': return <EmployeeAnalytics />;
       case 'SETTINGS': return <AdminSettings />;
       default: return <AdminOverview />;
     }

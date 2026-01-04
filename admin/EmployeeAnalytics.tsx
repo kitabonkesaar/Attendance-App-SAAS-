@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { DB } from '../../lib/db';
-import { Employee, Attendance, AttendanceStatus } from '../../types';
+import { DB } from '../lib/db';
+import { Employee, Attendance, AttendanceStatus } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 
 interface PerformanceRecord extends Employee {
   presentCount: number;
   lateCount: number;
+  halfDayCount: number;
   absentCount: number;
   percentage: number;
   chartData: { name: string; value: number; color: string }[];
@@ -20,16 +21,31 @@ const EmployeeAnalytics: React.FC = () => {
     calculatePerformance();
   }, []);
 
+  const getWorkingDaysCount = (date: Date): number => {
+    let count = 0;
+    const cur = new Date(date.getFullYear(), date.getMonth(), 1);
+    // Loop until yesterday to calculate completed working days, or include today? 
+    // Usually analytics includes today if checking live, but "absent" for today might be premature if it's morning.
+    // Let's include today for now.
+    while (cur <= date) {
+      const day = cur.getDay();
+      if (day !== 0 && day !== 6) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+  };
+
   const calculatePerformance = async () => {
     setIsLoading(true);
     try {
-      const employees = await DB.getEmployees();
+      const allEmployees = await DB.getEmployees();
+      const employees = allEmployees.filter(e => e.status === 'ACTIVE');
       const attendance = await DB.getAttendance();
       
       const now = new Date();
       const currentMonth = now.getMonth();
       const currentYear = now.getFullYear();
-      const todayDate = now.getDate();
+      const workingDays = getWorkingDaysCount(now);
 
       const data: PerformanceRecord[] = employees.map(emp => {
         const empRecords = attendance.filter(a => {
@@ -39,20 +55,28 @@ const EmployeeAnalytics: React.FC = () => {
 
         const present = empRecords.filter(r => r.status === AttendanceStatus.PRESENT).length;
         const late = empRecords.filter(r => r.status === AttendanceStatus.LATE).length;
-        const totalAttended = present + late;
-        const absent = Math.max(0, todayDate - totalAttended);
+        const halfDay = empRecords.filter(r => r.status === AttendanceStatus.HALF_DAY).length;
         
-        const percentage = todayDate > 0 ? (totalAttended / todayDate) * 100 : 100;
+        const totalAttended = present + late + halfDay;
+        
+        // Calculate absent based on expected working days
+        const absent = Math.max(0, workingDays - totalAttended);
+        
+        // Weighted score: Present/Late = 1, Half Day = 0.5
+        const effectiveScore = present + late + (halfDay * 0.5);
+        const percentage = workingDays > 0 ? (effectiveScore / workingDays) * 100 : 100;
 
         return {
           ...emp,
           presentCount: present,
           lateCount: late,
+          halfDayCount: halfDay,
           absentCount: absent,
           percentage: Math.min(100, Math.round(percentage)),
           chartData: [
             { name: 'Present', value: present, color: '#10b981' },
             { name: 'Late', value: late, color: '#f59e0b' },
+            { name: 'Half Day', value: halfDay, color: '#6366f1' },
             { name: 'Absent', value: absent, color: '#ef4444' }
           ]
         };
@@ -67,7 +91,7 @@ const EmployeeAnalytics: React.FC = () => {
   };
 
   const downloadFullReport = () => {
-    const headers = ['Rank', 'Name', 'Employee Code', 'Department', 'Role', 'Present Days', 'Late Days', 'Absent Days', 'Attendance %'];
+    const headers = ['Rank', 'Name', 'Employee Code', 'Department', 'Role', 'Present', 'Late', 'Half Day', 'Absent', 'Performance %'];
     const rows = performanceData.map((emp, idx) => [
       idx + 1,
       emp.name,
@@ -76,6 +100,7 @@ const EmployeeAnalytics: React.FC = () => {
       emp.role,
       emp.presentCount,
       emp.lateCount,
+      emp.halfDayCount,
       emp.absentCount,
       `${emp.percentage}%`
     ]);
@@ -149,7 +174,7 @@ const EmployeeAnalytics: React.FC = () => {
                       </div>
                    </div>
 
-                   <div className="grid grid-cols-3 gap-2">
+                   <div className="grid grid-cols-4 gap-2">
                       <div className="bg-gray-50 p-3 rounded-xl text-center">
                          <p className="text-[8px] font-black text-gray-400 uppercase mb-0.5">Present</p>
                          <p className="text-sm font-black text-emerald-600">{emp.presentCount}</p>
@@ -157,6 +182,10 @@ const EmployeeAnalytics: React.FC = () => {
                       <div className="bg-gray-50 p-3 rounded-xl text-center">
                          <p className="text-[8px] font-black text-gray-400 uppercase mb-0.5">Late</p>
                          <p className="text-sm font-black text-amber-600">{emp.lateCount}</p>
+                      </div>
+                      <div className="bg-gray-50 p-3 rounded-xl text-center">
+                         <p className="text-[8px] font-black text-gray-400 uppercase mb-0.5">Half Day</p>
+                         <p className="text-sm font-black text-indigo-500">{emp.halfDayCount}</p>
                       </div>
                       <div className="bg-gray-50 p-3 rounded-xl text-center">
                          <p className="text-[8px] font-black text-gray-400 uppercase mb-0.5">Absent</p>
@@ -220,8 +249,13 @@ const EmployeeAnalytics: React.FC = () => {
                         <p className="text-[10px] text-gray-400 font-bold uppercase">{log.time} — {log.punch_out_time || 'Present'}</p>
                       </div>
                     </div>
-                    <span className={`text-[8px] font-black px-3 py-1 rounded-lg uppercase tracking-widest ${log.status === 'PRESENT' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {log.status}
+                    <span className={`text-[8px] font-black px-3 py-1 rounded-lg uppercase tracking-widest ${
+                      log.status === 'PRESENT' ? 'bg-emerald-100 text-emerald-700' :
+                      log.status === 'LATE' ? 'bg-amber-100 text-amber-700' :
+                      log.status === 'HALF_DAY' ? 'bg-indigo-100 text-indigo-700' :
+                      'bg-rose-100 text-rose-700'
+                    }`}>
+                      {log.status.replace('_', ' ')}
                     </span>
                   </div>
                 ))}

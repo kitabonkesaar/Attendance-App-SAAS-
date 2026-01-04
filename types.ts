@@ -2,7 +2,8 @@
 export enum UserRole {
   EMPLOYEE = 'EMPLOYEE',
   ADMIN = 'ADMIN',
-  SUPER_ADMIN = 'SUPER_ADMIN'
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  MANAGER = 'MANAGER'
 }
 
 export enum AttendanceStatus {
@@ -13,19 +14,83 @@ export enum AttendanceStatus {
   PENDING = 'PENDING'
 }
 
+export type AccountStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'ACTIVE' | 'INACTIVE';
+
 export interface Employee {
   id: string;
   employee_code: string;
   name: string;
   mobile: string;
   email: string;
-  password?: string;
-  role: string;
+  password?: string; // Optional, often handled by Auth provider
+  role: string; // 'Staff', 'Manager', etc. (Display role)
   department: string;
   joining_date: string;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: AccountStatus;
   shift_start: string;
   shift_end: string;
+  
+  // Personal Info
+  address?: string;
+  emergency_contact?: string;
+  
+  // Hierarchy
+  manager_id?: string;
+  referred_by?: string;
+
+  // Metadata
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface Skill {
+  id: string;
+  employee_id: string;
+  skill_name: string;
+  certification_url?: string;
+  issue_date?: string;
+  expiry_date?: string;
+  created_at: string;
+}
+
+export interface Promotion {
+  id: string;
+  employee_id: string;
+  previous_position: string;
+  new_position: string;
+  promotion_date: string;
+  reason?: string;
+  approved_by?: string;
+  created_at: string;
+}
+
+export type ProjectStatus = 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  start_date?: string;
+  end_date?: string;
+  status: ProjectStatus;
+  created_at: string;
+}
+
+export interface ProjectAssignment {
+  id: string;
+  project_id: string;
+  employee_id: string;
+  role_in_project?: string;
+  assigned_at: string;
+}
+
+export interface PerformanceReview {
+  id: string;
+  employee_id: string;
+  review_date: string;
+  rating: number; // 1-5
+  comments?: string;
+  reviewer_id?: string;
   created_at: string;
 }
 
@@ -67,12 +132,23 @@ export interface AppSettings {
 
 export interface AuditLog {
   id: string;
-  admin_id: string;
+  admin_id?: string; // Legacy support
+  actor_id?: string; // New schema
   action: string;
-  entity: string;
-  old_value: string;
-  new_value: string;
-  timestamp: string;
+  entity: string; // or entity_type
+  
+  // Legacy fields
+  old_value?: string;
+  new_value?: string;
+  
+  // New schema
+  entity_id?: string;
+  changes?: Record<string, any>; // JSONB
+  ip_address?: string;
+  user_agent?: string;
+  
+  timestamp?: string; // Legacy
+  created_at?: string; // New schema
 }
 
 export interface UserSession {

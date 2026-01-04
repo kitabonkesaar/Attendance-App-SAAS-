@@ -2,35 +2,35 @@
 import React, { useState, useEffect } from 'react';
 import { UserSession, UserRole } from './types';
 import { DB } from './lib/db';
-import EmployeeDashboard from './components/employee/EmployeeDashboard';
-import AdminDashboardView from './components/admin/AdminDashboardView';
+import EmployeeDashboard from './employee/EmployeeDashboard';
+import AdminDashboardView from './admin/AdminDashboardView';
 import LoginView from './components/auth/LoginView';
+import StaffRegistration from './components/auth/StaffRegistration';
+import ForgotPassword from './components/auth/ForgotPassword';
+import SessionTimeout from './components/auth/SessionTimeout';
 import { supabase } from './lib/supabaseClient';
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<UserSession | null>(() => {
-    // 1. FAST INIT: Check localStorage first for instant render
-    const cached = localStorage.getItem('app_session');
-    return cached ? JSON.parse(cached) : null;
-  });
-  const [isLoading, setIsLoading] = useState(!session); // Only load if no cache
+  const [session, setSession] = useState<UserSession | null>(null);
+  const [authView, setAuthView] = useState<'login' | 'register' | 'forgot-password'>('login');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
     const checkSession = async () => {
       try {
+        console.log("Checking session...");
         const activeSession = await DB.getCurrentSession();
+        console.log("Session Check Result:", activeSession);
+        
         if (isMounted) {
-          // 2. BACKGROUND VALIDATION: Only update if changed or invalid
           if (activeSession) {
              setSession(activeSession);
-             // Update cache with fresh data
-             localStorage.setItem('app_session', JSON.stringify(activeSession));
-          } else if (!activeSession && session) {
+          } else {
              // Session invalid/expired -> Clear
+             console.log("No active session found.");
              setSession(null);
-             localStorage.removeItem('app_session');
           }
         }
       } catch (error) {
@@ -79,9 +79,23 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    localStorage.removeItem('app_session'); // Clear cache
-    setSession(null);
+    try {
+      // Attempt global sign out
+      // We ignore errors because we are clearing the local session anyway
+      // Use scope: 'local' to avoid network aborts on navigation
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (err) {
+      // Ignore network aborts or other sign-out errors
+      console.log("Sign out cleanup completed");
+    } finally {
+      setSession(null);
+      setAuthView('login'); // Ensure we go back to login view
+    }
+  };
+
+  const handleSessionTimeout = () => {
+    alert("Your session has expired due to inactivity."); 
+    handleLogout();
   };
 
   if (isLoading) {
@@ -93,11 +107,28 @@ const App: React.FC = () => {
   }
 
   if (!session) {
-    return <LoginView onLogin={(user) => setSession(user)} />;
+    if (authView === 'register') {
+      return <StaffRegistration onBack={() => setAuthView('login')} onSuccess={() => setAuthView('login')} />;
+    }
+    if (authView === 'forgot-password') {
+      return <ForgotPassword onBack={() => setAuthView('login')} />;
+    }
+    return (
+      <LoginView 
+        onLogin={(user) => setSession(user)} 
+        onRegisterClick={() => setAuthView('register')}
+        onForgotPasswordClick={() => setAuthView('forgot-password')}
+      />
+    );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <SessionTimeout 
+        isActive={!!session} 
+        onTimeout={handleSessionTimeout} 
+        timeoutInMs={15 * 60 * 1000} // 15 Minutes
+      />
       {session.role === UserRole.ADMIN || session.role === UserRole.SUPER_ADMIN ? (
         <AdminDashboardView session={session} onLogout={handleLogout} />
       ) : (

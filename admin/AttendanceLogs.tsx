@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Attendance, Employee, AttendanceStatus } from '../../types';
-import { DB } from '../../lib/db';
+import { Attendance, Employee, AttendanceStatus } from '../types';
+import { DB } from '../lib/db';
 
 const AttendanceLogs: React.FC = () => {
   const [logs, setLogs] = useState<Attendance[]>([]);

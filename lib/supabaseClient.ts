@@ -2,9 +2,16 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Use Vite's import.meta.env for environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://bnyiujoijyftorvvycuz.supabase.co";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJueWl1am9panlmdG9ydnZ5Y3V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc0MjI1MTEsImV4cCI6MjA4Mjk5ODUxMX0.dCX6BZBjYeD8nF4nc9HdesKHy-RdK1DWaieavsr1slE";
+// Temporarily hardcoded for immediate fix without restart
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJueWl1am9panlmdG9ydnZ5Y3V6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzQyMjUxMSwiZXhwIjoyMDgyOTk4NTExfQ.r-VQMDBGkkIRangrxc6r0OFMGSC5bGZjyHCN-kU2sS4";
+
+console.log('Supabase Config:', {
+  url: !!supabaseUrl,
+  anonKey: !!supabaseAnonKey,
+  serviceKey: !!supabaseServiceKey
+});
 
 // --- Mock Implementation ---
 
@@ -209,10 +216,24 @@ const createMockSupabaseClient = () => {
   } as any;
 };
 
+// Revert to default localStorage for reliability
+// Cookies have a 4KB limit which Supabase sessions often exceed, causing persistence failure
 export const supabase = (supabaseUrl && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      }
+    }) 
   : createMockSupabaseClient();
 
 export const adminSupabase = (supabaseUrl && supabaseServiceKey)
-  ? createClient(supabaseUrl, supabaseServiceKey)
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      }
+    })
   : supabase;

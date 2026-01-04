@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppSettings } from '../../types';
-import { DB } from '../../lib/db';
+import { AppSettings } from '../types';
+import { DB } from '../lib/db';
 
 const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
