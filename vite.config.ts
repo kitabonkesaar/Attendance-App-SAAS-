@@ -20,7 +20,7 @@ export default defineConfig({
         name: 'PhotoHub Attendance',
         short_name: 'PhotoHub',
         description: 'Workforce Management & Attendance System',
-        theme_color: '#059669',
+        theme_color: '#690000ff',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
