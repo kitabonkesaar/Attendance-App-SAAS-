@@ -289,8 +289,17 @@ export const DB = {
     
     // Convert Base64 Data URL to Blob if string
     if (typeof file === 'string' && file.startsWith('data:')) {
-      const response = await fetch(file);
-      fileBody = await response.blob();
+      try {
+          const response = await fetch(file);
+          fileBody = await response.blob();
+      } catch (e) {
+          throw new Error("Failed to process image data. Please retake photo.");
+      }
+    }
+
+    // Ensure we have a Blob
+    if (!(fileBody instanceof Blob)) {
+        throw new Error("Invalid file format.");
     }
 
     const { data, error } = await supabase.storage
@@ -300,7 +309,13 @@ export const DB = {
         upsert: true
       });
       
-    if (error) throw error;
+    if (error) {
+        // Handle "Mime type text/plain" error which often means the file body was empty or malformed
+        if (error.message && error.message.includes("MIME TYPE")) {
+             throw new Error("Image upload failed (Invalid Format). Please try again.");
+        }
+        throw error;
+    }
     
     const { data: { publicUrl } } = supabase.storage
       .from('attendance-photos')

@@ -163,6 +163,104 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, onLogout
     </div>
   );
 
+  const renderHistory = () => (
+    <div className="px-6 pb-32 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pt-6">
+      <h2 className="text-2xl font-black text-gray-900 tracking-tighter mb-6">Attendance History</h2>
+      {history.length === 0 ? (
+        <div className="p-8 text-center bg-white rounded-[2rem] border border-gray-100 shadow-sm">
+          <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+             <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </div>
+          <p className="text-gray-400 font-bold text-sm">No records found yet.</p>
+        </div>
+      ) : (
+        history.map((record) => (
+          <div key={record.id} className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-4">
+               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black ${record.status === 'LATE' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {new Date(record.date).getDate()}
+               </div>
+               <div>
+                  <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{new Date(record.date).toLocaleDateString('en-US', { month: 'short', weekday: 'short' })}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-sm font-black text-gray-900">{record.time.slice(0, 5)}</span>
+                    <span className="text-gray-300 font-bold">→</span>
+                    <span className="text-sm font-black text-gray-900">{record.punch_out_time ? record.punch_out_time.slice(0, 5) : '--:--'}</span>
+                  </div>
+               </div>
+            </div>
+            <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg tracking-widest ${
+              record.status === 'LATE' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
+            }`}>
+              {record.status}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  const renderProfile = () => (
+    <div className="px-6 pb-32 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pt-6">
+       <h2 className="text-2xl font-black text-gray-900 tracking-tighter mb-2">My Profile</h2>
+       
+       <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-emerald-50 to-transparent"></div>
+          <div className="relative z-10 flex flex-col items-center text-center">
+             <div className="w-24 h-24 bg-white rounded-[2rem] p-1 shadow-lg mb-4">
+               <div className="w-full h-full bg-emerald-100 rounded-[1.8rem] flex items-center justify-center text-3xl font-black text-emerald-700">
+                  {session.name[0]}
+               </div>
+             </div>
+             <h3 className="text-xl font-black text-gray-900">{session.name}</h3>
+             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">{employee?.role || 'Staff Member'}</p>
+             <div className="mt-4 bg-gray-50 px-4 py-2 rounded-xl text-[10px] font-black text-gray-500 uppercase tracking-widest">
+               {employee?.employee_code || 'ID: ---'}
+             </div>
+          </div>
+       </div>
+
+       <div className="space-y-4">
+          <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex items-center gap-4">
+             <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+             </div>
+             <div>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Email Address</p>
+                <p className="text-sm font-bold text-gray-900">{employee?.email || session.name}</p>
+             </div>
+          </div>
+          
+          <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex items-center gap-4">
+             <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+             </div>
+             <div>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Phone Number</p>
+                <p className="text-sm font-bold text-gray-900">{employee?.mobile || 'Not Set'}</p>
+             </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex items-center gap-4">
+             <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+             </div>
+             <div>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Department</p>
+                <p className="text-sm font-bold text-gray-900">{employee?.department || 'General'}</p>
+             </div>
+          </div>
+       </div>
+
+       <button 
+         onClick={onLogout}
+         className="w-full bg-rose-50 text-rose-600 py-4 rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-sm active:scale-95 transition-all mt-8"
+       >
+         Sign Out
+       </button>
+    </div>
+  );
+
   return (
     <div className="max-w-md mx-auto min-h-screen bg-gray-50 flex flex-col relative overflow-hidden">
       {/* Side Menu Overlay */}
@@ -199,8 +297,8 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, onLogout
 
       <main className="flex-1 overflow-y-auto pt-12">
         {activeTab === 'HOME' && renderHome()}
-        {activeTab === 'HISTORY' && <div className="p-6 text-center text-gray-400 text-sm">No history records found.</div>}
-        {activeTab === 'PROFILE' && <div className="p-6 text-center text-gray-400 text-sm">Profile data unavailable.</div>}
+        {activeTab === 'HISTORY' && renderHistory()}
+        {activeTab === 'PROFILE' && renderProfile()}
       </main>
 
       <div className="fixed bottom-8 left-6 right-6 z-40">
