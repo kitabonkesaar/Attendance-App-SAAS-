@@ -33,14 +33,26 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
     try {
       let loginEmail = email;
 
+      // 1. Resolve Mobile to Email (with timeout)
       if (isMobileNumber(email)) {
-        const { data: employees, error: fetchError } = await supabase
+        // Use adminSupabase to bypass RLS since user isn't logged in yet
+        const mobileFetchPromise = adminSupabase
           .from('employees')
           .select('email')
-          .eq('mobile', email)
-          .single();
+          .eq('mobile_number', email) // Changed from 'mobile' to 'mobile_number' based on schema intuition, verifying...
+          .maybeSingle(); // Use maybeSingle to avoid error if not found
+          
+        const { data: employees, error: fetchError } = await Promise.race([
+            mobileFetchPromise,
+            new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Mobile lookup timed out")), 5000))
+        ]);
 
-        if (fetchError || !employees) {
+        if (fetchError) {
+            console.error("Mobile lookup error:", fetchError);
+            throw new Error("System error during mobile lookup.");
+        }
+
+        if (!employees) {
            throw new Error("Mobile number not found. Please contact admin.");
         }
         loginEmail = employees.email;
@@ -49,11 +61,21 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
       // 2. Authenticate with Supabase Auth
       // Attempt simple connection check first to fail fast if URL/Key is invalid
       if (!supabase.auth) throw new Error("Supabase client not initialized");
+
+      // Check for network connectivity before attempting
+      if (!navigator.onLine) {
+          throw new Error("No internet connection. Please check your network settings.");
+      }
       
-      const result = await supabase.auth.signInWithPassword({
+      const authPromise = supabase.auth.signInWithPassword({
         email: loginEmail,
         password,
       });
+
+      const result = await Promise.race([
+        authPromise,
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Authentication timed out")), 30000))
+      ]);
 
       const { data, error: authError } = result;
 
@@ -66,33 +88,39 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
       if (data.user) {
         // 2.1 STRICT SECURITY CHECK: Verify Employee Status
         // Must be done AFTER auth but BEFORE session is granted
-        const { data: employeeData, error: empError } = await supabase
+        // Use adminSupabase to ensure we get the true status regardless of RLS
+        const employeeCheckPromise = adminSupabase
           .from('employees')
           .select('status, name, role')
           .eq('id', data.user.id)
           .single();
+          
+        const { data: employeeData, error: empError } = await Promise.race([
+            employeeCheckPromise,
+            new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Profile verification timed out")), 5000))
+        ]);
 
         if (empError) {
            console.error("Employee fetch error:", empError);
            // If we can't verify, we must deny
            await supabase.auth.signOut();
-           await DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, 'Employee record missing or inaccessible');
+           DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, 'Employee record missing or inaccessible');
            throw new Error("Security verification failed. Employee record not found.");
         }
 
         if (employeeData.status !== 'ACTIVE') {
            await supabase.auth.signOut();
-           await DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, `Status is ${employeeData.status}`);
+           DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, `Status is ${employeeData.status}`);
            throw new Error("Access Denied: Your account is currently inactive.");
         }
 
         // 2.2 Role Mapping & Security Check
         let appRole = UserRole.EMPLOYEE;
-        const dbRole = employeeData.role || 'Staff';
+        const dbRole = (employeeData.role || 'Staff').toLowerCase(); // Normalize case
         
-        if (dbRole === 'Admin' || dbRole === 'Super Admin') {
+        if (dbRole === 'admin' || dbRole === 'super admin') {
             appRole = UserRole.ADMIN;
-        } else if (dbRole === 'Manager') {
+        } else if (dbRole === 'manager') {
             appRole = UserRole.MANAGER;
         }
 
@@ -105,18 +133,18 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
         // Enforce Portal Separation
         if (activeTab === UserRole.EMPLOYEE && (appRole === UserRole.ADMIN || appRole === UserRole.SUPER_ADMIN)) {
             await supabase.auth.signOut();
-            await DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, 'Admin attempted Staff login');
+            DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, 'Admin attempted Staff login');
             throw new Error("Admins must use the Admin Terminal.");
         }
 
         if (activeTab === UserRole.ADMIN && appRole !== UserRole.ADMIN && appRole !== UserRole.SUPER_ADMIN) {
             await supabase.auth.signOut();
-            await DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, 'Staff attempted Admin login');
+            DB.logLoginAttempt(loginEmail, 'FAILED', data.user.id, 'Staff attempted Admin login');
             throw new Error("Access Denied: This area is for Administrators only.");
         }
 
-        // Log successful login
-        await DB.logLoginAttempt(loginEmail, 'SUCCESS', data.user.id, 'Login successful');
+        // Log successful login (Fire and forget)
+        DB.logLoginAttempt(loginEmail, 'SUCCESS', data.user.id, 'Login successful');
 
         console.log("Auth successful, constructing optimistic session...");
         
@@ -135,7 +163,15 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
       // Log failed attempt (best effort, don't block UI)
       DB.logLoginAttempt(email, 'FAILED', undefined, err.message).catch(e => console.warn("Log failed", e));
       
-      setError(err.message || "An unexpected login error occurred.");
+      let errorMessage = err.message || "An unexpected login error occurred.";
+      
+      if (errorMessage.includes("timed out")) {
+          errorMessage = "Connection timed out. Please check your internet connection and try again.";
+      } else if (errorMessage.includes("Failed to fetch")) {
+          errorMessage = "Network error. Unable to connect to the server.";
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -173,13 +209,13 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
             }`}
           />
           <button
-            onClick={() => { setActiveTab(UserRole.EMPLOYEE); setEmail('staff@demo.com'); setPassword('Staff@123'); setError(null); }}
+            onClick={() => { setActiveTab(UserRole.EMPLOYEE); setEmail(''); setPassword(''); setError(null); }}
             className={`flex-1 py-3.5 text-xs font-black uppercase tracking-widest relative z-10 transition-colors duration-300 ${isEmployee ? 'text-white' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Staff
           </button>
           <button
-            onClick={() => { setActiveTab(UserRole.ADMIN); setEmail('admin@demo.com'); setPassword('Admin@123'); setError(null); }}
+            onClick={() => { setActiveTab(UserRole.ADMIN); setEmail(''); setPassword(''); setError(null); }}
             className={`flex-1 py-3.5 text-xs font-black uppercase tracking-widest relative z-10 transition-colors duration-300 ${!isEmployee ? 'text-white' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Admin

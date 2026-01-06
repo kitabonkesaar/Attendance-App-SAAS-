@@ -154,9 +154,13 @@ export const DB = {
             const { error } = await adminSupabase.from('audit_logs').insert(logEntry);
             
             if (error) {
+                // Silently ignore aborts to prevent console noise
+                if (error.message && error.message.includes('AbortError')) return;
                 console.warn("Failed to log login attempt:", error);
             }
-        } catch (e) {
+        } catch (e: any) {
+            // Silently ignore network aborts
+            if (e.name === 'AbortError' || e.message?.includes('AbortError')) return;
             console.warn("Error logging login:", e);
         }
     },
@@ -169,22 +173,30 @@ export const DB = {
       
       // OPTIMIZATION: Return basic session immediately if profile fetch is slow
       // We check 'employees' table as it is the source of truth for roles/status
-      const { data: profile, error: profileError } = await supabase
+      // TIMEOUT PROTECTION: If profile fetch hangs, we fallback to Auth Metadata or basic role to prevent app freeze
+      
+      const profilePromise = adminSupabase
         .from('employees')
         .select('name, role, status')
         .eq('id', session.user.id)
         .maybeSingle();
-
-      if (profileError) {
-         console.warn("Profile fetch warning:", profileError);
+        
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Profile fetch timeout')), 10000));
+      
+      let profile = null;
+      try {
+          const result: any = await Promise.race([profilePromise, timeoutPromise]);
+          profile = result.data;
+      } catch (e) {
+          console.warn("Profile fetch timed out or failed, using auth metadata fallback");
       }
       
       // Map DB Role to App Role
       let appRole = UserRole.EMPLOYEE;
-      const dbRole = profile?.role || 'Staff';
-      if (dbRole === 'Admin' || dbRole === 'Super Admin') {
+      const dbRole = (profile?.role || 'Staff').toLowerCase();
+      if (dbRole === 'admin' || dbRole === 'super admin') {
           appRole = UserRole.ADMIN;
-      } else if (dbRole === 'Manager') {
+      } else if (dbRole === 'manager') {
           appRole = UserRole.MANAGER;
       } else if (session.user.email?.includes('admin')) {
           // Fallback for legacy/initial setup if no DB record yet
@@ -302,7 +314,7 @@ export const DB = {
         throw new Error("Invalid file format.");
     }
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await adminSupabase.storage
       .from('attendance-photos')
       .upload(fileName, fileBody, {
         contentType: 'image/jpeg',
@@ -317,7 +329,7 @@ export const DB = {
         throw error;
     }
     
-    const { data: { publicUrl } } = supabase.storage
+    const { data: { publicUrl } } = adminSupabase.storage
       .from('attendance-photos')
       .getPublicUrl(data?.path || fileName);
       

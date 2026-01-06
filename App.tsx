@@ -2,13 +2,20 @@
 import React, { useState, useEffect } from 'react';
 import { UserSession, UserRole } from './types';
 import { DB } from './lib/db';
-import EmployeeDashboard from './employee/EmployeeDashboard';
-import AdminDashboardView from './admin/AdminDashboardView';
-import LoginView from './components/auth/LoginView';
-import StaffRegistration from './components/auth/StaffRegistration';
-import ForgotPassword from './components/auth/ForgotPassword';
+const EmployeeDashboard = React.lazy(() => import('./employee/EmployeeDashboard'));
+const AdminDashboardView = React.lazy(() => import('./admin/AdminDashboardView'));
+const LoginView = React.lazy(() => import('./components/auth/LoginView'));
+const StaffRegistration = React.lazy(() => import('./components/auth/StaffRegistration'));
+const ForgotPassword = React.lazy(() => import('./components/auth/ForgotPassword'));
 import SessionTimeout from './components/auth/SessionTimeout';
 import { supabase } from './lib/supabaseClient';
+
+// Reusable Loading Spinner for Suspense Fallback
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+  </div>
+);
 
 const App: React.FC = () => {
   const [session, setSession] = useState<UserSession | null>(null);
@@ -79,17 +86,22 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
+    setIsLoading(true); // Show loading spinner immediately
     try {
-      // Attempt global sign out
+      // Attempt global sign out with timeout race to prevent indefinite hanging
       // We ignore errors because we are clearing the local session anyway
       // Use scope: 'local' to avoid network aborts on navigation
-      await supabase.auth.signOut({ scope: 'local' });
+      await Promise.race([
+        supabase.auth.signOut({ scope: 'local' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Sign out timed out')), 2000))
+      ]);
     } catch (err) {
       // Ignore network aborts or other sign-out errors
-      console.log("Sign out cleanup completed");
+      console.warn("Sign out cleanup completed with warning:", err);
     } finally {
       setSession(null);
       setAuthView('login'); // Ensure we go back to login view
+      setIsLoading(false);
     }
   };
 
@@ -108,17 +120,27 @@ const App: React.FC = () => {
 
   if (!session) {
     if (authView === 'register') {
-      return <StaffRegistration onBack={() => setAuthView('login')} onSuccess={() => setAuthView('login')} />;
+      return (
+        <React.Suspense fallback={<LoadingSpinner />}>
+          <StaffRegistration onBack={() => setAuthView('login')} onSuccess={() => setAuthView('login')} />
+        </React.Suspense>
+      );
     }
     if (authView === 'forgot-password') {
-      return <ForgotPassword onBack={() => setAuthView('login')} />;
+      return (
+        <React.Suspense fallback={<LoadingSpinner />}>
+          <ForgotPassword onBack={() => setAuthView('login')} />
+        </React.Suspense>
+      );
     }
     return (
-      <LoginView 
-        onLogin={(user) => setSession(user)} 
-        onRegisterClick={() => setAuthView('register')}
-        onForgotPasswordClick={() => setAuthView('forgot-password')}
-      />
+      <React.Suspense fallback={<LoadingSpinner />}>
+        <LoginView 
+          onLogin={(user) => setSession(user)} 
+          onRegisterClick={() => setAuthView('register')}
+          onForgotPasswordClick={() => setAuthView('forgot-password')}
+        />
+      </React.Suspense>
     );
   }
 
@@ -129,11 +151,13 @@ const App: React.FC = () => {
         onTimeout={handleSessionTimeout} 
         timeoutInMs={15 * 60 * 1000} // 15 Minutes
       />
-      {session.role === UserRole.ADMIN || session.role === UserRole.SUPER_ADMIN ? (
-        <AdminDashboardView session={session} onLogout={handleLogout} />
-      ) : (
-        <EmployeeDashboard session={session} onLogout={handleLogout} />
-      )}
+      <React.Suspense fallback={<LoadingSpinner />}>
+        {session.role === UserRole.ADMIN || session.role === UserRole.SUPER_ADMIN ? (
+          <AdminDashboardView session={session} onLogout={handleLogout} />
+        ) : (
+          <EmployeeDashboard session={session} onLogout={handleLogout} />
+        )}
+      </React.Suspense>
     </div>
   );
 };

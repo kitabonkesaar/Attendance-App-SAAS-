@@ -74,11 +74,6 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
     }
   };
 
-  const switchCamera = () => {
-    stopCamera();
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
-  };
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -94,6 +89,13 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
 
   const stopCamera = () => {
     if (stream) stream.getTracks().forEach(track => track.stop());
+  };
+
+  const switchCamera = () => {
+    stopCamera();
+    setCapturedImage(null);
+    setError(null);
+    setFacingMode(prev => (prev === 'user' ? 'environment' : 'user'));
   };
 
   const getCurrentLocation = () => {
