@@ -51,7 +51,7 @@ const App: React.FC = () => {
 
     checkSession();
 
-    // Safety timeout to prevent infinite loading (Reduced to 5 seconds for better UX)
+    // Safety timeout to prevent infinite loading (Increased to 10 seconds for mobile networks)
     const timer = setTimeout(() => {
       if (isMounted) {
         setIsLoading((prev) => {
@@ -62,7 +62,7 @@ const App: React.FC = () => {
           return false;
         });
       }
-    }, 5000);
+    }, 10000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, _session) => {
       if (!isMounted) return;
