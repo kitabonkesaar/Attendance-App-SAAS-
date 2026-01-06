@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserRole, UserSession } from '../../types';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase, adminSupabase } from '../../lib/supabaseClient';
 import { DB } from '../../lib/db';
 
 interface LoginViewProps {
@@ -39,7 +39,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
         const mobileFetchPromise = adminSupabase
           .from('employees')
           .select('email')
-          .eq('mobile_number', email) // Changed from 'mobile' to 'mobile_number' based on schema intuition, verifying...
+          .eq('mobile', email.replace(/[^0-9]/g, '')) // Correct column is 'mobile', and we strip non-digits
           .maybeSingle(); // Use maybeSingle to avoid error if not found
           
         const { data: employees, error: fetchError } = await Promise.race([
