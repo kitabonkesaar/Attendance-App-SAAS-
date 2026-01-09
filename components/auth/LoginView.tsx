@@ -28,8 +28,6 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
     setIsSubmitting(true);
     setError(null);
 
-    console.log("Attempting login with:", { email, isMobile: isMobileNumber(email) });
-
     try {
       let loginEmail = email;
 
@@ -44,7 +42,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
           
         const { data: employees, error: fetchError } = await Promise.race([
             mobileFetchPromise,
-            new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Mobile lookup timed out")), 5000))
+            new Promise<{ data: null; error: { message: string } }>((_, reject) => setTimeout(() => reject(new Error("Mobile lookup timed out")), 5000))
         ]);
 
         if (fetchError) {
@@ -74,7 +72,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
 
       const result = await Promise.race([
         authPromise,
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Authentication timed out")), 30000))
+        new Promise<{ data: { user: null; session: null }; error: { message: string } }>((_, reject) => setTimeout(() => reject(new Error("Authentication timed out")), 30000))
       ]);
 
       const { data, error: authError } = result;
@@ -97,7 +95,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
           
         const { data: employeeData, error: empError } = await Promise.race([
             employeeCheckPromise,
-            new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Profile verification timed out")), 5000))
+            new Promise<{ data: null; error: { message: string } }>((_, reject) => setTimeout(() => reject(new Error("Profile verification timed out")), 5000))
         ]);
 
         if (empError) {
@@ -146,8 +144,6 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
         // Log successful login (Fire and forget)
         DB.logLoginAttempt(loginEmail, 'SUCCESS', data.user.id, 'Login successful');
 
-        console.log("Auth successful, constructing optimistic session...");
-        
         // 2. Optimistic Login (Don't wait for DB fetch, let App.tsx handle sync)
         const optimisticSession: UserSession = {
             id: data.user.id,
@@ -158,12 +154,13 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onRegisterClick, onForgo
         
         onLogin(optimisticSession);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Login Error:", err);
       // Log failed attempt (best effort, don't block UI)
-      DB.logLoginAttempt(email, 'FAILED', undefined, err.message).catch(e => console.warn("Log failed", e));
+      const errorMsgForLog = err instanceof Error ? err.message : String(err);
+      DB.logLoginAttempt(email, 'FAILED', undefined, errorMsgForLog).catch(e => console.warn("Log failed", e));
       
-      let errorMessage = err.message || "An unexpected login error occurred.";
+      let errorMessage = errorMsgForLog || "An unexpected login error occurred.";
       
       if (errorMessage.includes("timed out")) {
           errorMessage = "Connection timed out. Please check your internet connection and try again.";

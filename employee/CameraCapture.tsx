@@ -11,6 +11,29 @@ interface CameraCaptureProps {
   onSuccess: (attendance: Attendance) => void;
 }
 
+interface LegacyNavigator extends Navigator {
+  getUserMedia?: (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: unknown) => void
+  ) => void;
+  webkitGetUserMedia?: (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: unknown) => void
+  ) => void;
+  mozGetUserMedia?: (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: unknown) => void
+  ) => void;
+  msGetUserMedia?: (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: unknown) => void
+  ) => void;
+}
+
 const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCancel, onSuccess }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,7 +58,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
       
       if (!hasMediaDevices) {
          // Fallback for legacy browsers or insecure contexts
-         const rawNavigator = navigator as any;
+         const rawNavigator = navigator as LegacyNavigator;
          const legacyGetUserMedia = rawNavigator.getUserMedia || 
                                     rawNavigator.webkitGetUserMedia || 
                                     rawNavigator.mozGetUserMedia || 
@@ -45,7 +68,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
              // Wrap legacy callback API in Promise
              const stream = await new Promise<MediaStream>((resolve, reject) => {
                  legacyGetUserMedia.call(rawNavigator, 
-                    { video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+                    { video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
                     resolve,
                     reject
                  );
@@ -59,17 +82,20 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
       }
 
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, 
+        video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } }, 
         audio: false 
       });
       setStream(mediaStream);
       if (videoRef.current) videoRef.current.srcObject = mediaStream;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Camera access error:", err);
-      let msg = err.message || "Access blocked";
-      if (err.name === 'NotAllowedError') msg = "Permission denied. Allow camera access.";
-      if (err.name === 'NotFoundError') msg = "No camera found.";
-      if (err.name === 'NotReadableError') msg = "Camera is in use by another app.";
+      let msg = "Access blocked";
+      if (err instanceof Error) {
+        msg = err.message || msg;
+        if (err.name === 'NotAllowedError') msg = "Permission denied. Allow camera access.";
+        if (err.name === 'NotFoundError') msg = "No camera found.";
+        if (err.name === 'NotReadableError') msg = "Camera is in use by another app.";
+      }
       setError(`Camera Error: ${msg}`);
     }
   };
@@ -122,10 +148,25 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
       if (context) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-        context.drawImage(videoRef.current, 0, 0);
-        setCapturedImage(canvasRef.current.toDataURL('image/jpeg', 0.8));
+        // Optimize: Downscale image to max 640px width for faster upload/sync
+        const MAX_WIDTH = 640;
+        let width = videoRef.current.videoWidth;
+        let height = videoRef.current.videoHeight;
+        
+        if (width > MAX_WIDTH) {
+          const ratio = MAX_WIDTH / width;
+          width = MAX_WIDTH;
+          height = height * ratio;
+        }
+
+        canvasRef.current.width = width;
+        canvasRef.current.height = height;
+        
+        // Draw resized image
+        context.drawImage(videoRef.current, 0, 0, width, height);
+        
+        // Use lower quality (0.7) for faster base64 generation and upload
+        setCapturedImage(canvasRef.current.toDataURL('image/jpeg', 0.7));
         stopCamera();
       }
     }
@@ -205,10 +246,10 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ employeeId, mode, onCance
           onSuccess(record);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Critical submission failure:", err);
       // Safe stringification to avoid "Cannot convert object to primitive"
-      const errorMsg = err?.message || (typeof err === 'string' ? err : 'Network Error');
+      const errorMsg = (err instanceof Error) ? err.message : (typeof err === 'string' ? err : 'Network Error');
       setError(`Submit Failed: ${errorMsg}. Please refresh and try again.`);
     } finally {
       setIsProcessing(false);

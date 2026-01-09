@@ -75,9 +75,10 @@ const StaffRegistration: React.FC<StaffRegistrationProps> = ({ onBack, onSuccess
       // Optional: Auto-login or ask to verify email
       // Supabase usually requires email verification by default.
       
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Registration Error:", err);
-      setError(err.message || "An unexpected error occurred.");
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

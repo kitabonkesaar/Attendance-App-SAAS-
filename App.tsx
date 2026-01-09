@@ -2,42 +2,38 @@
 import React, { useState, useEffect } from 'react';
 import { UserSession, UserRole } from './types';
 import { DB } from './lib/db';
-const EmployeeDashboard = React.lazy(() => import('./employee/EmployeeDashboard'));
-const AdminDashboardView = React.lazy(() => import('./admin/AdminDashboardView'));
-const LoginView = React.lazy(() => import('./components/auth/LoginView'));
-const StaffRegistration = React.lazy(() => import('./components/auth/StaffRegistration'));
-const ForgotPassword = React.lazy(() => import('./components/auth/ForgotPassword'));
+import EmployeeDashboard from './employee/EmployeeDashboard';
+import AdminDashboardView from './admin/AdminDashboardView';
+import LoginView from './components/auth/LoginView';
+import StaffRegistration from './components/auth/StaffRegistration';
+import ForgotPassword from './components/auth/ForgotPassword';
 import SessionTimeout from './components/auth/SessionTimeout';
 import { supabase } from './lib/supabaseClient';
 
-// Reusable Loading Spinner for Suspense Fallback
-const LoadingSpinner = () => (
-  <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
-  </div>
-);
-
 const App: React.FC = () => {
-  const [session, setSession] = useState<UserSession | null>(null);
+  // Initialize with cached session if available for instant load
+  const [session, setSession] = useState<UserSession | null>(() => DB.getCachedSession());
+  // Only show loading if we don't have a cached session AND we haven't checked yet
+  // Actually, if we have a cached session, we show the app immediately (isLoading = false)
+  // If no cached session, we show loading until checkSession completes
+  const [isLoading, setIsLoading] = useState(!DB.getCachedSession());
   const [authView, setAuthView] = useState<'login' | 'register' | 'forgot-password'>('login');
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
-
+    
     const checkSession = async () => {
       try {
-        console.log("Checking session...");
         const activeSession = await DB.getCurrentSession();
-        console.log("Session Check Result:", activeSession);
         
         if (isMounted) {
           if (activeSession) {
              setSession(activeSession);
           } else {
              // Session invalid/expired -> Clear
-             console.log("No active session found.");
              setSession(null);
+             // Also clear cache
+             localStorage.removeItem('attendance_app_session_cache');
           }
         }
       } catch (error) {
@@ -65,7 +61,6 @@ const App: React.FC = () => {
     }, 10000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, _session) => {
-      if (!isMounted) return;
       // We rely on checkSession for initial load. 
       // This listener handles subsequent updates (login/logout/token refresh).
       // To avoid race conditions on mount, we only process if not already loading or if checkSession finished.
@@ -100,6 +95,7 @@ const App: React.FC = () => {
       console.warn("Sign out cleanup completed with warning:", err);
     } finally {
       setSession(null);
+      localStorage.removeItem('attendance_app_session_cache');
       setAuthView('login'); // Ensure we go back to login view
       setIsLoading(false);
     }
@@ -121,26 +117,20 @@ const App: React.FC = () => {
   if (!session) {
     if (authView === 'register') {
       return (
-        <React.Suspense fallback={<LoadingSpinner />}>
           <StaffRegistration onBack={() => setAuthView('login')} onSuccess={() => setAuthView('login')} />
-        </React.Suspense>
       );
     }
     if (authView === 'forgot-password') {
       return (
-        <React.Suspense fallback={<LoadingSpinner />}>
           <ForgotPassword onBack={() => setAuthView('login')} />
-        </React.Suspense>
       );
     }
     return (
-      <React.Suspense fallback={<LoadingSpinner />}>
         <LoginView 
           onLogin={(user) => setSession(user)} 
           onRegisterClick={() => setAuthView('register')}
           onForgotPasswordClick={() => setAuthView('forgot-password')}
         />
-      </React.Suspense>
     );
   }
 
@@ -151,13 +141,11 @@ const App: React.FC = () => {
         onTimeout={handleSessionTimeout} 
         timeoutInMs={15 * 60 * 1000} // 15 Minutes
       />
-      <React.Suspense fallback={<LoadingSpinner />}>
         {session.role === UserRole.ADMIN || session.role === UserRole.SUPER_ADMIN ? (
           <AdminDashboardView session={session} onLogout={handleLogout} />
         ) : (
           <EmployeeDashboard session={session} onLogout={handleLogout} />
         )}
-      </React.Suspense>
     </div>
   );
 };

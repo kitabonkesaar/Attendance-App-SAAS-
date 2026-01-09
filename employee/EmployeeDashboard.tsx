@@ -42,7 +42,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, onLogout
   }, [session.employee_id, showCamera.show]);
 
   useEffect(() => {
-    let interval: any;
+    let interval: ReturnType<typeof setInterval>;
     if (todayAttendance && !todayAttendance.punch_out_time) {
       interval = setInterval(() => {
         const start = new Date(`${todayAttendance.date}T${todayAttendance.time}`);
@@ -313,10 +313,10 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ session, onLogout
             { id: 'PROFILE', icon: (
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
             )}
-          ].map(tab => (
+          ].map((tab: { id: string; icon: JSX.Element }) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as 'HOME' | 'HISTORY' | 'PROFILE')}
               className={`flex-1 flex flex-col items-center py-2 transition-all duration-300 ${activeTab === tab.id ? 'text-emerald-600 scale-110' : 'text-gray-400 opacity-60'}`}
             >
               {tab.icon}

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Employee } from '../types';
+import { Employee, AccountStatus } from '../types';
 import { DB } from '../lib/db';
 import { supabase } from '../lib/supabaseClient';
 import ConfirmationModal from '../components/ui/ConfirmationModal';
@@ -46,7 +46,6 @@ const EmployeeManagement: React.FC = () => {
     const subscription = supabase
       .channel('public:employees')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, (payload) => {
-        console.log('Real-time update:', payload);
         refreshEmployees();
       })
       .subscribe();
@@ -58,16 +57,15 @@ const EmployeeManagement: React.FC = () => {
 
   const refreshEmployees = async () => {
     try {
-      console.log('Fetching employees...');
       const data = await DB.getEmployees();
-      console.log('Employees fetched:', data);
       setEmployees(data);
       // Clear any previous error if successful
       setSuccessMsg(null); 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching employees:', error);
       // Provide actionable feedback instead of generic alert
-      alert(`Failed to load employees: ${error.message || 'Unknown error'}. Please check your connection or permissions.`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to load employees: ${errorMessage}. Please check your connection or permissions.`);
     }
   };
 
@@ -91,7 +89,7 @@ const EmployeeManagement: React.FC = () => {
     
     // Helper to prevent infinite hanging
     const withTimeout = async <T,>(promise: Promise<T>, ms: number = 15000, operationName: string): Promise<T> => {
-      let timeoutId: any;
+      let timeoutId: ReturnType<typeof setTimeout>;
       const timeoutPromise = new Promise<T>((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error(`${operationName} timed out after ${ms/1000}s`)), ms);
       });
@@ -113,7 +111,7 @@ const EmployeeManagement: React.FC = () => {
         const updatedEmp = { ...editingEmployee, ...formData } as Employee;
         // Explicitly check for password in formData because it might not be in the Employee type
         if (formData.password) {
-            (updatedEmp as any).password = formData.password;
+            updatedEmp.password = formData.password;
         }
         
         await withTimeout(DB.updateEmployee(updatedEmp, 'admin1'), 10000, "Update Profile");
@@ -139,7 +137,6 @@ const EmployeeManagement: React.FC = () => {
         if (authError) {
           // RECOVERY: If user exists (e.g. previous attempt failed mid-way), try to recover ID
           if (authError.message.includes("already registered")) {
-             console.log("User exists, attempting to recover ID...");
              const existingUser = await DB.findUserByEmail(formData.email!);
              if (existingUser) {
                  userId = existingUser.id;
@@ -175,7 +172,7 @@ const EmployeeManagement: React.FC = () => {
           role: formData.role || 'Staff',
           department: formData.department || 'General',
           joining_date: new Date().toISOString().split('T')[0],
-          status: (formData.status as any) || 'ACTIVE',
+          status: (formData.status as AccountStatus) || 'ACTIVE',
           shift_start: formData.shift_start || '09:00',
           shift_end: formData.shift_end || '18:00',
           created_at: new Date().toISOString()
@@ -211,9 +208,9 @@ const EmployeeManagement: React.FC = () => {
       withTimeout(refreshEmployees(), 5000, "Refreshing List").catch(e => console.warn(e));
       
       // setTimeout(() => setSuccessMsg(null), 8000); // Handled by modal now
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Save failed:", err);
-      let msg = err.message;
+      let msg = err instanceof Error ? err.message : String(err);
 
       // SPECIFIC FIX: If DB trigger fails OR RLS blocks manual insert
       // We show the repair script which now includes the RLS policy fix.

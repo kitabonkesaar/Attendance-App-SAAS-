@@ -26,10 +26,11 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack }) => {
         type: 'success',
         text: 'Password reset instructions have been sent to your email.'
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to send reset email.";
       setMessage({
         type: 'error',
-        text: err.message || "Failed to send reset email."
+        text: errorMessage
       });
     } finally {
       setLoading(false);

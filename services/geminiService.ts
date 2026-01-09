@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { Attendance } from "../types";
 
 const getAIClient = () => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -45,12 +46,12 @@ export const analyzeAttendancePhoto = async (base64Image: string) => {
   }
 };
 
-export const getWorkforceInsights = async (attendanceData: any[]) => {
+export const getWorkforceInsights = async (attendanceData: Attendance[]) => {
   const ai = getAIClient();
   if (!ai || attendanceData.length === 0) return "Daily workforce activity is within expected parameters.";
 
   try {
-    const summary = attendanceData.reduce((acc, curr: any) => {
+    const summary = attendanceData.reduce((acc, curr: Attendance) => {
       acc[curr.status] = (acc[curr.status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);

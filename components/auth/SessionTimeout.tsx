@@ -22,7 +22,6 @@ const SessionTimeout: React.FC<SessionTimeoutProps> = ({
     }
 
     timeoutRef.current = setTimeout(() => {
-      console.log("Session timed out due to inactivity.");
       onTimeout();
     }, timeoutInMs);
   }, [isActive, timeoutInMs, onTimeout]);

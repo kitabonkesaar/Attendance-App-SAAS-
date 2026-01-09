@@ -112,8 +112,19 @@ import { Employee, Attendance, AppSettings, AuditLog, Announcement, UserRole, At
  */
 
 const isMock = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SESSION_CACHE_KEY = 'attendance_app_session_cache';
 
 export const DB = {
+  getCachedSession: (): UserSession | null => {
+    try {
+      const cached = localStorage.getItem(SESSION_CACHE_KEY);
+      if (!cached) return null;
+      return JSON.parse(cached);
+    } catch {
+      return null;
+    }
+  },
+
   seedDemoData: async () => {
     // In mock mode, we still want to seed data to localStorage
     try {
@@ -127,8 +138,9 @@ export const DB = {
         device_binding: false
       });
       return "SUCCESS: Settings initialized.";
-    } catch (e: any) {
-      throw new Error(`Seeding Failed: ${e.message}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`Seeding Failed: ${msg}`);
     }
   },
 
@@ -138,12 +150,12 @@ export const DB = {
             // In a real app, this might be done via Edge Function to get real IP
             const userAgent = navigator.userAgent;
             
-            const logEntry: any = {
+            const logEntry: Partial<AuditLog> = {
                 action: 'LOGIN_ATTEMPT',
-                entity_type: 'AUTH',
-                entity_id: email, // Store email as entity_id for tracking
-                changes: { status, reason, user_agent: userAgent },
-                timestamp: new Date().toISOString() // Use client timestamp or let DB handle it
+                entity: 'AUTH', // mapped to entity in DB which corresponds to entity_type in logic
+                // We use 'changes' to store extra metadata
+                changes: { status, reason, user_agent: userAgent, entity_id: email },
+                // timestamp handled by DB default
             };
 
             if (userId) {
@@ -158,9 +170,9 @@ export const DB = {
                 if (error.message && error.message.includes('AbortError')) return;
                 console.warn("Failed to log login attempt:", error);
             }
-        } catch (e: any) {
+        } catch (e: unknown) {
             // Silently ignore network aborts
-            if (e.name === 'AbortError' || e.message?.includes('AbortError')) return;
+            if (e instanceof Error && (e.name === 'AbortError' || e.message?.includes('AbortError'))) return;
             console.warn("Error logging login:", e);
         }
     },
@@ -185,7 +197,7 @@ export const DB = {
       
       let profile = null;
       try {
-          const result: any = await Promise.race([profilePromise, timeoutPromise]);
+          const result = await Promise.race([profilePromise, timeoutPromise]) as { data: { name: string; role: string; status: string } | null; error: unknown };
           profile = result.data;
       } catch (e) {
           console.warn("Profile fetch timed out or failed, using auth metadata fallback");
@@ -209,6 +221,9 @@ export const DB = {
         role: appRole,
         employee_id: session.user.id
       };
+
+      // Cache the session for faster load on next refresh
+      localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(sessionData));
 
       return sessionData;
     } catch (error) {
@@ -270,7 +285,7 @@ export const DB = {
       }
       
       return (data as Employee[]) || [];
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("DB.getEmployees Exception (Returning empty list to prevent crash):", err);
       // Return empty array instead of crashing if network fails or schema mismatch
       return [];
@@ -352,7 +367,7 @@ export const DB = {
         // 3. Sync changes to Supabase Auth (auth.users)
         // Only attempt this if we have the necessary fields and it's not a new record (though upsert handles new, auth update requires ID)
         if (employee.id) {
-            const authUpdates: any = {};
+            const authUpdates: { email?: string; user_metadata?: object; password?: string } = {};
             if (employee.email) authUpdates.email = employee.email;
             if (employee.name) authUpdates.user_metadata = { name: employee.name }; // Update metadata name
             
@@ -365,13 +380,12 @@ export const DB = {
             // However, the 'Employee' type might not strictly have 'password' defined in types.ts?
             // Let's check if 'password' is in 'employee'.
             // If TS complains, we cast it.
-            const empWithPassword = employee as any;
-            if (empWithPassword.password && empWithPassword.password.trim().length > 0) {
+            if (employee.password && employee.password.trim().length > 0) {
                 // Validate Password Strength (Basic)
-                if (empWithPassword.password.length < 6) {
+                if (employee.password.length < 6) {
                     throw new Error("Password must be at least 6 characters long.");
                 }
-                authUpdates.password = empWithPassword.password;
+                authUpdates.password = employee.password;
             }
 
             // Only call if there are actual updates to make
@@ -387,8 +401,6 @@ export const DB = {
                     if (authUpdates.password) {
                          throw new Error(`Failed to update password: ${authError.message}`);
                     }
-                } else {
-                    console.log(`[Info] Synced profile updates to Auth for user ${employee.id}`);
                 }
             }
         }

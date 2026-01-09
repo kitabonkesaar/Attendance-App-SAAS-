@@ -2,28 +2,25 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Use Vite's import.meta.env for environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://bnyiujoijyftorvvycuz.supabase.co";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJueWl1am9panlmdG9ydnZ5Y3V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc0MjI1MTEsImV4cCI6MjA4Mjk5ODUxMX0.dCX6BZBjYeD8nF4nc9HdesKHy-RdK1DWaieavsr1slE";
-// Temporarily hardcoded for immediate fix without restart
-const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJueWl1am9panlmdG9ydnZ5Y3V6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzQyMjUxMSwiZXhwIjoyMDgyOTk4NTExfQ.r-VQMDBGkkIRangrxc6r0OFMGSC5bGZjyHCN-kU2sS4";
-
-console.log('Supabase Config:', {
-  url: !!supabaseUrl,
-  anonKey: !!supabaseAnonKey,
-  serviceKey: !!supabaseServiceKey
-});
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 // --- Mock Implementation ---
 
 const MOCK_STORAGE_KEY = 'mock_supabase_data';
 const MOCK_SESSION_KEY = 'mock_supabase_session';
 
-const getMockData = () => {
+interface MockData {
+  [key: string]: any[];
+}
+
+const getMockData = (): MockData => {
   const data = localStorage.getItem(MOCK_STORAGE_KEY);
   return data ? JSON.parse(data) : { profiles: [], employees: [], attendance: [], app_settings: [] };
 };
 
-const setMockData = (data: any) => {
+const setMockData = (data: MockData) => {
   localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(data));
 };
 
@@ -32,7 +29,7 @@ const getMockSession = () => {
   return session ? JSON.parse(session) : null;
 };
 
-const setMockSession = (session: any) => {
+const setMockSession = (session: unknown) => {
   if (session) {
     localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(session));
   } else {
@@ -62,12 +59,12 @@ const createMockSupabaseClient = () => {
       const session = getMockSession();
       return { data: { session }, error: null };
     },
-    onAuthStateChange: (callback: any) => {
+    onAuthStateChange: (callback: unknown) => {
       // In a real mock, we'd trigger this on login/logout. 
       // For now, we just return a subscription.
       return { data: { subscription: { unsubscribe: () => {} } } };
     },
-    signInWithPassword: async ({ email, password }: any) => {
+    signInWithPassword: async ({ email, password }: Record<string, string>) => {
         // Simple mock authentication
         if (email === 'admin@demo.com' && password === 'Admin@123') {
             const user = { id: 'mock-admin-id', email, role: 'authenticated' };
@@ -83,7 +80,7 @@ const createMockSupabaseClient = () => {
         }
         return { data: { user: null, session: null }, error: { message: 'Invalid login credentials' } };
     },
-    signUp: async ({ email, password, options }: any) => {
+    signUp: async ({ email, password, options }: { email: string; password?: string; options?: { data?: Record<string, unknown> } }) => {
         // Mock sign up
         const userId = Math.random().toString(36).substring(7);
         const user = { 
@@ -105,7 +102,7 @@ const createMockSupabaseClient = () => {
 
   const mockStorage = {
     from: (bucket: string) => ({
-      upload: async (path: string, file: any) => {
+      upload: async (path: string, file: unknown) => {
         console.log(`[Mock] Uploaded ${path} to ${bucket}`);
         return { data: { path }, error: null };
       },
@@ -118,7 +115,7 @@ const createMockSupabaseClient = () => {
   // Helper to simulate query building
   const createQueryBuilder = (table: string) => {
     let currentData = getMockData()[table] || [];
-    let error: any = null;
+    const error: unknown = null;
     let singleResult = false;
 
     const builder = {
@@ -126,19 +123,19 @@ const createMockSupabaseClient = () => {
         // In a real mock, we'd parse columns. For now, return all.
         return builder;
       },
-      insert: (rows: any) => {
+      insert: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
          const data = getMockData();
          if (!data[table]) data[table] = [];
          const newRows = Array.isArray(rows) ? rows : [rows];
          // Add IDs if missing
-         newRows.forEach((r: any) => {
+         newRows.forEach((r: Record<string, unknown>) => {
              if(!r.id) r.id = Math.random().toString(36).substring(7);
              data[table].push(r);
          });
          setMockData(data);
          return builder;
       },
-      upsert: (rows: any) => {
+      upsert: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
         const data = getMockData();
         if (!data[table]) data[table] = [];
         const newRows = Array.isArray(rows) ? rows : [rows];
@@ -154,14 +151,14 @@ const createMockSupabaseClient = () => {
         setMockData(data);
         return builder;
       },
-      update: (updates: any) => {
+      update: (updates: Record<string, unknown>) => {
           // This is tricky without knowing which rows to update (needs .eq first)
           // We'll store the updates and apply them in .eq or .then
           // Simplification: We only support update after eq
           (builder as any)._pendingUpdate = updates;
           return builder;
       },
-      eq: (column: string, value: any) => {
+      eq: (column: string, value: unknown) => {
         if ((builder as any)._pendingUpdate) {
              const data = getMockData();
              if (data[table]) {
@@ -186,7 +183,7 @@ const createMockSupabaseClient = () => {
         singleResult = true;
         return builder;
       },
-      order: (column: string, { ascending = true }: any = {}) => {
+      order: (column: string, { ascending = true }: { ascending?: boolean } = {}) => {
         currentData.sort((a: any, b: any) => {
             if (a[column] < b[column]) return ascending ? -1 : 1;
             if (a[column] > b[column]) return ascending ? 1 : -1;
@@ -195,7 +192,7 @@ const createMockSupabaseClient = () => {
         return builder;
       },
       // Promise interface
-      then: (resolve: any, reject: any) => {
+      then: (resolve: (result: { data: any; error: unknown }) => void, reject: (reason?: unknown) => void) => {
         const result = singleResult ? (currentData[0] || null) : currentData;
         resolve({ data: result, error });
       }
